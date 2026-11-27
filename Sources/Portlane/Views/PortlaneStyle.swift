@@ -3,7 +3,15 @@ import PortlaneCore
 
 /// Chinese and English wording for the product surfaces. Raw SSH diagnostics retain their original text.
 enum L10n {
-    private static let usesChinese = Locale.preferredLanguages.first?.hasPrefix("zh") == true
+    static let launchedLanguage = PortlanePreferences.Language(
+        rawValue: UserDefaults.standard.string(forKey: PortlanePreferences.Language.key) ?? ""
+    ) ?? .system
+
+    private static let usesChinese = switch launchedLanguage {
+    case .system: Locale.preferredLanguages.first?.hasPrefix("zh") == true
+    case .chinese: true
+    case .english: false
+    }
 
     static func text(_ english: String, _ chinese: String) -> String { usesChinese ? chinese : english }
 }

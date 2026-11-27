@@ -8,7 +8,7 @@ import PortlaneCore
 final class TunnelStore {
     private(set) var tunnels: [Tunnel] = []
     private(set) var loadError: String?
-    private let fileURL: URL?
+    let fileURL: URL?
 
     static var defaultURL: URL {
         if let override = ProcessInfo.processInfo.environment["PORTLANE_DATA_FILE"], !override.isEmpty {
@@ -54,6 +54,12 @@ final class TunnelStore {
 
     func remove(_ id: UUID) throws {
         try write(tunnels.filter { $0.id != id })
+    }
+
+    /// Export the same tunnel data that can be restored, without looking up any Keychain entries.
+    func exportData() throws -> Data {
+        if let loadError { throw CocoaError(.fileReadCorruptFile, userInfo: [NSLocalizedDescriptionKey: loadError]) }
+        return try PortholeDocument.encoder().encode(PortholeDocument(tunnels: tunnels))
     }
 
     /// Publish the new in-memory list only when the atomic disk replacement succeeds.

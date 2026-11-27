@@ -1,5 +1,6 @@
-import Foundation
+import AppKit
 import Darwin
+import Foundation
 import PortlaneCore
 @testable import Portlane
 import Testing
@@ -98,23 +99,29 @@ struct ManagedOpenSSHTests {
         ]
         var tunnel = Tunnel(name: "Loopback fixture", host: "127.0.0.1", port: fixture.sshPort,
                             user: NSUserName(), authMethod: .publicKey, identityFile: directory.appending(path: "client_ed25519").path,
-                            forwardings: rules, autoReconnect: true, hostKeyPolicy: .strict, useSSHConfig: false,
+                            forwardings: rules, autoConnect: true, autoReconnect: true, hostKeyPolicy: .strict, useSSHConfig: false,
                             extraOptions: "UserKnownHostsFile=\(directory.appending(path: "known_hosts").path)\nGlobalKnownHostsFile=/dev/null")
         let database = directory.appending(path: "tunnels.json")
         let store = TunnelStore(fileURL: database)
         try store.save(tunnel)
-        let manager = TunnelManager(store: store)
+        let preferences = PortlanePreferences()
+        let alternateClient = directory.appending(path: "alternate ssh")
+        try FileManager.default.createSymbolicLink(at: alternateClient, withDestinationURL: URL(fileURLWithPath: "/usr/bin/ssh"))
+        preferences.customSSHPath = alternateClient.path
+        let manager = TunnelManager(store: store, preferences: preferences)
         defer { manager.shutdown() }
-        manager.connect(tunnel.id)
+        manager.connectOnLaunch()
         let runtime = manager.runtime(tunnel.id)
         try await waitFor { runtime.state.isConnected || runtime.state.isFailure }
         try #require(runtime.state.isConnected, "SSH output: \(runtime.logs.map(\.message).joined(separator: "\n"))")
         let pid = try #require(runtime.pid)
         #expect(runtime.forwardStatus.values.allSatisfy { $0 == .active })
+        #expect(runtime.logs.contains { $0.message.contains(alternateClient.path) })
         #expect(try request(["http://127.0.0.1:\(fixture.localPort)/direct"]) == "portlane-fixture")
         #expect(try request(["http://127.0.0.1:\(fixture.remotePort)/remote"]) == "portlane-fixture")
         #expect(try request(["--socks5-hostname", "127.0.0.1:\(fixture.socksPort)", "http://127.0.0.1:\(fixture.webPort)/socks"]) == "portlane-fixture")
 
+        preferences.customSSHPath = ""
         tunnel.name = "Metadata only"
         tunnel.forwardings[0].note = "A note"
         let previous = try store.save(tunnel)
@@ -122,8 +129,20 @@ struct ManagedOpenSSHTests {
         #expect(runtime.pid == pid)
         #expect(TunnelStore(fileURL: database).tunnel(tunnel.id)?.forwardings[0].note == "A note")
 
+        // Exercise the wake preference without putting the test Mac to sleep.
+        let workspaceEvents = NSWorkspace.shared.notificationCenter
+        preferences.reconnectOnWake = false
+        workspaceEvents.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(runtime.pid == pid)
+        preferences.reconnectOnWake = true
+        workspaceEvents.post(name: NSWorkspace.didWakeNotification, object: nil)
+        try await waitFor { runtime.state.isConnected && runtime.pid != pid }
+        let awakePID = try #require(runtime.pid)
+        #expect(runtime.logs.last(where: { $0.message.hasPrefix("$ ") })?.message.hasPrefix("$ /usr/bin/ssh ") == true)
+
         let snapshot = try ExternalScanner.scan(excluding: manager.runningPIDs)
-        #expect(!snapshot.contains(where: { $0.id == pid }))
+        #expect(!snapshot.contains(where: { $0.id == awakePID }))
         let external = try #require(snapshot.first { $0.id == fixture.externalPID })
         #expect(external.rules.compactMap { $0.listener?.port }.sorted() == fixture.externalPorts.sorted())
         #expect(external.rules.allSatisfy { $0.forward?.kind == .local && $0.forward?.targetPort == fixture.webPort })
@@ -136,12 +155,12 @@ struct ManagedOpenSSHTests {
         let blocked = manager.runtime(second.id)
         try await waitFor { blocked.state.isFailure }
         if case .failed = blocked.forwardStatus[conflict.id] {} else { Issue.record("Conflict must identify the blocked rule") }
-        #expect(runtime.pid == pid)
+        #expect(runtime.pid == awakePID)
 
         // Dropping our fixture master exercises the real process exit and retry path.
-        try #require(kill(pid, SIGTERM) == 0)
+        try #require(kill(awakePID, SIGTERM) == 0)
         try await waitFor { if case .reconnecting = runtime.state { return true }; return false }
-        try await waitFor { runtime.state == .connected && runtime.pid != pid }
+        try await waitFor { runtime.state == .connected && runtime.pid != awakePID }
         let replacement = try #require(runtime.pid)
         try #require(kill(replacement, SIGTERM) == 0)
         try await waitFor { if case .reconnecting = runtime.state { return true }; return false }

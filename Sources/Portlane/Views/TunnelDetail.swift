@@ -249,6 +249,7 @@ struct TunnelDetail: View {
     }
 
     private func copyCommand() {
-        model.copy(SSHCommandBuilder().displayCommand(for: tunnel), key: "command-\(tunnel.id)")
+        let builder = SSHCommandBuilder(context: .init(sshPath: model.manager.sshPath))
+        model.copy(builder.displayCommand(for: tunnel), key: "command-\(tunnel.id)")
     }
 }

@@ -190,12 +190,13 @@ final class TunnelRuntime {
             return
         }
         controlSocket = socket
-        let builder = SSHCommandBuilder(context: .init(sshPath: manager.sshPath, helperExecutable: Bundle.main.executablePath,
+        let sshPath = manager.sshPath
+        let builder = SSHCommandBuilder(context: .init(sshPath: sshPath, helperExecutable: Bundle.main.executablePath,
                                                        controlPath: socket.url.path))
         let arguments = builder.arguments(for: tunnel)
 
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: manager.sshPath)
+        p.executableURL = URL(fileURLWithPath: sshPath)
         p.arguments = arguments
         var env = ProcessInfo.processInfo.environment
         env["SSH_ASKPASS"] = Bundle.main.executablePath
@@ -313,8 +314,9 @@ final class TunnelRuntime {
 
     /// A jump host may log its own session start. Only our private master can acknowledge rules.
     private func applyRules(_ tunnel: Tunnel) {
+        // Keep the control client paired with the master even if the global SSH preference changed.
         guard desiredOn, !restartRequested, forwardingTask == nil, let socket = controlSocket, socket.exists,
-              let ssh = manager?.sshPath, let pid else { return }
+              let ssh = process?.executableURL?.path, let pid else { return }
         let rules = tunnel.enabledForwardings
         forwardingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let failure = socket.apply(rules, ssh: ssh)
@@ -348,6 +350,7 @@ final class TunnelRuntime {
         wasConnectedThisRun = true
         lastError = nil
         log(.success, String(localized: "Tunnel is up."))
+        manager?.notifyConnected(tunnelID)
 
         // Reset the backoff once the connection has been stable for a while.
         stabilityTask?.cancel()
@@ -399,6 +402,8 @@ final class TunnelRuntime {
 
         let allowRetry = (tunnel?.autoReconnect ?? true) && !forwardFailedThisRun
         if allowRetry {
+            // Report the transition from connected to retrying once, even when several retries fail.
+            if wasConnected { manager?.notifyFailure(tunnelID, message: message, interrupted: true) }
             attempt += 1
             let delay = ReconnectPolicy.delay(forAttempt: attempt)
             let at = Date().addingTimeInterval(delay)
@@ -425,6 +430,7 @@ final class TunnelRuntime {
         lastError = message
         for (id, s) in forwardStatus where s == .pending || s == .active { forwardStatus[id] = .idle }
         log(.error, message)
+        manager?.notifyFailure(tunnelID, message: message, interrupted: wasConnectedThisRun)
     }
 
     private func terminate(_ process: Process) {

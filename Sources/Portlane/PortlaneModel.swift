@@ -15,19 +15,26 @@ final class PortlaneModel {
         var addRule = false
     }
 
+    enum ImportKind { case sshConfig, backup, codinn }
+
     struct ImportPreview: Identifiable {
         let id = UUID()
+        let kind: ImportKind
+        let source: String
         let tunnels: [Tunnel]
+        let skippedCount: Int
     }
 
+    let preferences: PortlanePreferences
     let store: TunnelStore
     let manager: TunnelManager
-    private let demo: Bool
+    let demo: Bool
     private(set) var discovered: [ExternalSession] = []
     private(set) var refreshing = false
     private(set) var discoveryError: String?
     private(set) var copied: String?
     @ObservationIgnored private var copyReset: Task<Void, Never>?
+    @ObservationIgnored var openMainWindow: (() -> Void)?
     var errorMessage: String?
     var selection: Selection?
     var query = ""
@@ -37,10 +44,16 @@ final class PortlaneModel {
 
     init(demo: Bool = false) {
         self.demo = demo
+        preferences = PortlanePreferences(defaults: demo ? nil : .standard)
         store = demo ? TunnelStore(fileURL: nil, samples: DemoContent.tunnels) : TunnelStore()
-        manager = TunnelManager(store: store, demo: demo)
+        manager = TunnelManager(store: store, demo: demo, preferences: preferences)
         if demo { configureDemo() }
         pickAvailableSelection()
+    }
+
+    func showMainWindow() {
+        NSApp.activate()
+        openMainWindow?()
     }
 
     var externalSessions: [ExternalSession] {
@@ -133,34 +146,75 @@ final class PortlaneModel {
 
     /// Only the active user's local SSH config is inspected. Importing never rewrites it.
     func previewSSHConfig() {
-        let file = URL.homeDirectory.appending(path: ".ssh/config")
         do {
-            let content = try String(contentsOf: file, encoding: .utf8)
-            let known = Set(store.tunnels.map(\.host))
-            let imported = SSHConfigImporter.tunnels(fromConfig: content).map {
-                // Resolve User, Port, IdentityFile and ProxyJump through the alias at connection time.
-                Tunnel(name: $0.name, note: $0.note, host: $0.host, forwardings: $0.forwardings)
-            }.filter { !known.contains($0.host) && !TunnelValidator.validate($0).contains(where: { $0.severity == .error }) }
-            guard !imported.isEmpty else {
-                errorMessage = L10n.text("No new TCP forwarding rules were found in ~/.ssh/config.",
-                                         "~/.ssh/config 中没有可以导入的新 TCP 转发。")
-                return
-            }
-            importPreview = ImportPreview(tunnels: imported)
-        } catch {
-            errorMessage = L10n.text("Could not read ~/.ssh/config.", "无法读取 ~/.ssh/config。")
-        }
-    }
-
-    func importSelected(_ tunnels: [Tunnel]) {
-        do {
-            try store.add(tunnels)
-            if let first = tunnels.first { selection = .managed(first.id) }
-            query = ""
-            importPreview = nil
+            importPreview = try sshConfigImport()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func sshConfigImport() throws -> ImportPreview {
+        let file = URL.homeDirectory.appending(path: ".ssh/config")
+        guard let content = try? String(contentsOf: file, encoding: .utf8) else {
+            throw CocoaError(.fileReadUnknown, userInfo: [
+                NSLocalizedDescriptionKey: L10n.text("Could not read ~/.ssh/config.", "无法读取 ~/.ssh/config。")
+            ])
+        }
+        let candidates = SSHConfigImporter.tunnels(fromConfig: content).map {
+            // Leave identity, user, port and jump host resolution to the original SSH alias.
+            Tunnel(name: $0.name, note: $0.note, host: $0.host, forwardings: $0.forwardings)
+        }
+        return try makeImportPreview(candidates, kind: .sshConfig, source: "~/.ssh/config")
+    }
+
+    /// Prefer the document format when it contains tunnel records. Codinn exports may also be JSON objects.
+    func backupImport(from file: URL) throws -> ImportPreview {
+        let data = try Data(contentsOf: file)
+        if let document = try? PortholeDocument.decoder().decode(PortholeDocument.self, from: data),
+           document.tunnels.contains(where: { !$0.host.isEmpty }) {
+            return try makeImportPreview(document.tunnels, kind: .backup, source: file.lastPathComponent)
+        }
+        let candidates = try LegacySSHTunnelImporter.tunnels(from: data)
+        return try makeImportPreview(candidates, kind: .codinn, source: file.lastPathComponent)
+    }
+
+    /// Check for duplicates again when committing, since the library can change while a preview is open.
+    @discardableResult
+    func importSelected(_ tunnels: [Tunnel], kind: ImportKind) throws -> Int {
+        let fresh = try makeImportPreview(tunnels, kind: kind, source: "").tunnels
+        try store.add(fresh)
+        if let first = fresh.first { selection = .managed(first.id) }
+        query = ""
+        return fresh.count
+    }
+
+    private func makeImportPreview(_ candidates: [Tunnel], kind: ImportKind, source: String) throws -> ImportPreview {
+        var ids = Set(store.tunnels.map(\.id))
+        var aliases = Set(store.tunnels.map { $0.host.lowercased() })
+        let builder = SSHCommandBuilder()
+        func codinnKey(_ tunnel: Tunnel) -> [String] { [tunnel.name] + builder.arguments(for: tunnel) }
+        var codinnKeys = kind == .codinn ? Set(store.tunnels.map(codinnKey)) : []
+
+        let fresh = candidates.filter { tunnel in
+            guard !ids.contains(tunnel.id), Set(tunnel.forwardings.map(\.id)).count == tunnel.forwardings.count,
+                  !TunnelValidator.validate(tunnel).contains(where: { $0.severity == .error }) else { return false }
+            switch kind {
+            case .sshConfig:
+                guard aliases.insert(tunnel.host.lowercased()).inserted else { return false }
+            case .codinn:
+                // Codinn records are given new IDs on parse, so compare their names and connection parameters.
+                guard codinnKeys.insert(codinnKey(tunnel)).inserted else { return false }
+            case .backup:
+                break
+            }
+            return ids.insert(tunnel.id).inserted
+        }
+        guard !fresh.isEmpty else {
+            throw CocoaError(.fileReadUnknown, userInfo: [
+                NSLocalizedDescriptionKey: L10n.text("No new, valid tunnels were found.", "没有找到可导入的新隧道。")
+            ])
+        }
+        return ImportPreview(kind: kind, source: source, tunnels: fresh, skippedCount: candidates.count - fresh.count)
     }
 
     private func configureDemo() {

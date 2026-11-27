@@ -9,4 +9,7 @@ if arguments.dropFirst().first == "--proxy-connect" {
 if ProcessInfo.processInfo.environment[AskpassEnvironment.socketPath] != nil {
     exit(AskpassHelper.run(prompt: arguments.dropFirst().joined(separator: " ")))
 }
+
+// Resolve the language before displaying the first view so it stays fixed until the next launch.
+_ = L10n.launchedLanguage
 PortlaneApp.main()

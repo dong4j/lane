@@ -61,6 +61,7 @@ struct TunnelEditor: View {
     @State private var host: String
     @State private var port: String
     @State private var identity: String
+    @State private var autoConnect: Bool
     @State private var reconnect: Bool
     @State private var useConfig: Bool
     @State private var rules: [RuleDraft]
@@ -84,6 +85,7 @@ struct TunnelEditor: View {
         _host = State(initialValue: tunnel.user.isEmpty ? tunnel.host : "\(tunnel.user)@\(tunnel.host)")
         _port = State(initialValue: tunnel.port == 22 ? "" : String(tunnel.port))
         _identity = State(initialValue: tunnel.identityFile)
+        _autoConnect = State(initialValue: tunnel.autoConnect)
         _reconnect = State(initialValue: tunnel.autoReconnect)
         _useConfig = State(initialValue: tunnel.useSSHConfig)
         var drafts = tunnel.forwardings.map(RuleDraft.init)
@@ -262,10 +264,15 @@ struct TunnelEditor: View {
                           field: .identity, mono: true)
                     input(L10n.text("Rule name", "规则名称"), text: rule.name, placeholder: "PostgreSQL", field: .ruleName)
                 }
-                HStack(spacing: 18) {
-                    Toggle(L10n.text("Use SSH configuration", "使用 SSH 配置"), isOn: $useConfig)
-                    Toggle(L10n.text("Reconnect automatically", "自动重连"), isOn: $reconnect)
-                    Toggle(L10n.text("Enable rule", "启用规则"), isOn: rule.enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 18) {
+                        Toggle(L10n.text("Connect when Portlane opens", "启动 Portlane 时连接"), isOn: $autoConnect)
+                        Toggle(L10n.text("Reconnect automatically", "自动重连"), isOn: $reconnect)
+                    }
+                    HStack(spacing: 18) {
+                        Toggle(L10n.text("Use SSH configuration", "使用 SSH 配置"), isOn: $useConfig)
+                        Toggle(L10n.text("Enable rule", "启用规则"), isOn: rule.enabled)
+                    }
                 }
                 .toggleStyle(.checkbox)
                 .font(.system(size: 12))
@@ -332,6 +339,7 @@ struct TunnelEditor: View {
         if !tunnel.identityFile.isEmpty { tunnel.authMethod = .publicKey }
         else if tunnel.authMethod == .publicKey { tunnel.authMethod = .automatic }
         tunnel.useSSHConfig = useConfig
+        tunnel.autoConnect = autoConnect
         tunnel.autoReconnect = reconnect
         tunnel.forwardings = rules.map(\.resolved)
 

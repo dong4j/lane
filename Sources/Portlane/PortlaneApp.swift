@@ -1,17 +1,29 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 /// Both app surfaces use the same SwiftUI state and AppKit process lifetime.
 struct PortlaneApp: App {
     @NSApplicationDelegateAdaptor(PortlaneDelegate.self) private var delegate
-    @AppStorage("portlane.appearance") private var appearance = "system"
+
+    private var preferences: PortlanePreferences { delegate.model.preferences }
 
     private var preferredScheme: ColorScheme? {
-        switch appearance {
-        case "light": .light
-        case "dark": .dark
-        default: nil
+        switch preferences.appearance {
+        case .light: .light
+        case .dark: .dark
+        case .system: nil
         }
+    }
+
+    private var menuBarVisible: Binding<Bool> {
+        Binding(
+            get: { preferences.presentation != .dockOnly },
+            set: { inserted in
+                // Removing the status item in macOS leaves a Dock entry to recover Settings.
+                if !inserted, preferences.presentation != .dockOnly { preferences.presentation = .dockOnly }
+            }
+        )
     }
 
     var body: some Scene {
@@ -22,15 +34,22 @@ struct PortlaneApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 960, height: 620)
         .windowResizability(.contentMinSize)
+        .onChange(of: preferences.presentation) { delegate.applyPresentation() }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button(L10n.text("New Tunnel", "新建隧道")) { delegate.model.newTunnel() }
-                    .keyboardShortcut("n")
-                Button(L10n.text("Import SSH Configuration…", "导入 SSH 配置…")) { delegate.model.previewSSHConfig() }
+                Button(L10n.text("New Tunnel", "新建隧道")) {
+                    delegate.model.showMainWindow()
+                    delegate.model.newTunnel()
+                }
+                .keyboardShortcut("n")
+                Button(L10n.text("Import SSH Configuration…", "导入 SSH 配置…")) {
+                    delegate.model.showMainWindow()
+                    delegate.model.previewSSHConfig()
+                }
             }
         }
 
-        MenuBarExtra {
+        MenuBarExtra(isInserted: menuBarVisible) {
             LaneMenuBar(model: delegate.model)
                 .preferredColorScheme(preferredScheme)
         } label: {
@@ -40,29 +59,21 @@ struct PortlaneApp: App {
         .menuBarExtraStyle(.window)
 
         Settings {
-            Form {
-                Picker(L10n.text("Appearance", "外观"), selection: $appearance) {
-                    Text(L10n.text("System", "跟随系统")).tag("system")
-                    Text(L10n.text("Light", "浅色")).tag("light")
-                    Text(L10n.text("Dark", "深色")).tag("dark")
-                }
-                Button(L10n.text("Refresh Local Discovery", "刷新本机发现")) { delegate.model.refreshDiscovery() }
-            }
-            .formStyle(.grouped)
-            .padding(8)
-            .frame(width: 410, height: 170)
-            .preferredColorScheme(preferredScheme)
+            PortlaneSettings(model: delegate.model)
+                .preferredColorScheme(preferredScheme)
         }
     }
 }
 
 /// Closing the main window leaves the menu bar and its owned sessions alive.
 @MainActor
-final class PortlaneDelegate: NSObject, NSApplicationDelegate {
-    let model = PortlaneModel(demo: CommandLine.arguments.contains("--demo") || CommandLine.arguments.contains("--render-previews"))
+final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    let model = PortlaneModel(demo: CommandLine.arguments.contains {
+        ["--demo", "--render-previews", "--menu-layout-check"].contains($0)
+    })
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+        applyPresentation()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -78,12 +89,25 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate {
             return
         }
         #endif
+        if !model.demo, TunnelNotifications.available {
+            UNUserNotificationCenter.current().delegate = self
+        }
         model.manager.startServices()
+        model.manager.connectOnLaunch()
         model.refreshDiscovery()
         NSApp.activate()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applyPresentation() {
+        NSApp.setActivationPolicy(model.preferences.presentation == .menuBarOnly ? .accessory : .regular)
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                             willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .list]
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         model.manager.shutdown()

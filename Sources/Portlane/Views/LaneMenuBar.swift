@@ -10,6 +10,7 @@ struct LaneMenuBar: View {
     /// Measure the scrollable content so the popover never grows beyond its viewport.
     @State private var contentHeight: CGFloat = 0
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -96,7 +97,10 @@ struct LaneMenuBar: View {
                     showMainWindow()
                     model.newTunnel()
                 }
-                SettingsLink { Text(L10n.text("Settings…", "设置…")) }
+                Button(L10n.text("Settings…", "设置…")) {
+                    NSApp.activate()
+                    openSettings()
+                }
                 Divider()
                 Button(L10n.text("Quit Portlane", "退出 Portlane")) { NSApp.terminate(nil) }
             } label: {
@@ -343,8 +347,8 @@ struct LaneMenuBar: View {
     }
 
     private func showMainWindow() {
+        NSApp.activate()
         openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

@@ -1,23 +1,25 @@
 import SwiftUI
 import PortlaneCore
 
-/// Shows the concrete aliases and TCP entries before writing any imported configuration.
+/// Shows the concrete tunnels and forwarding rules before writing any imported configuration.
 struct ImportSheet: View {
     let preview: PortlaneModel.ImportPreview
-    let model: PortlaneModel
+    let onImport: ([Tunnel]) throws -> Void
     @State private var selected: Set<UUID>
+    @State private var error: String?
     @Environment(\.dismiss) private var dismiss
 
-    init(preview: PortlaneModel.ImportPreview, model: PortlaneModel) {
+    init(preview: PortlaneModel.ImportPreview, onImport: @escaping ([Tunnel]) throws -> Void) {
         self.preview = preview
-        self.model = model
+        self.onImport = onImport
         _selected = State(initialValue: Set(preview.tunnels.map(\.id)))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(L10n.text("Import SSH Configuration", "导入 SSH 配置")).font(.title2.weight(.semibold))
-            Text("~/.ssh/config").font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+            Text(L10n.text("Import Tunnels", "导入隧道")).font(.title2.weight(.semibold))
+            Text(preview.source).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(preview.tunnels) { tunnel in
@@ -26,9 +28,16 @@ struct ImportSheet: View {
                             set: { value in if value { selected.insert(tunnel.id) } else { selected.remove(tunnel.id) } }
                         )) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(tunnel.host).fontWeight(.semibold)
+                                Text(tunnel.displayName).fontWeight(.semibold)
+                                if tunnel.displayName != tunnel.hostNotation {
+                                    Text(tunnel.hostNotation).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                }
                                 ForEach(tunnel.forwardings) { rule in
                                     Text(rule.commandString).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                                }
+                                if tunnel.autoConnect {
+                                    Text(L10n.text("Connects when Portlane opens", "启动 Portlane 时连接"))
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -37,12 +46,25 @@ struct ImportSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if preview.skippedCount > 0 {
+                Text(L10n.text("Skipped \(preview.skippedCount) duplicate or invalid entries.",
+                               "已跳过 \(preview.skippedCount) 条重复或无效的记录。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
             HStack {
                 Spacer()
                 Button(L10n.text("Cancel", "取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction).buttonStyle(LaneButtonStyle())
                 Button(L10n.text("Import Selected", "导入所选")) {
-                    model.importSelected(preview.tunnels.filter { selected.contains($0.id) })
+                    do {
+                        try onImport(preview.tunnels.filter { selected.contains($0.id) })
+                        dismiss()
+                    } catch {
+                        self.error = error.localizedDescription
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(LaneButtonStyle(kind: .primary))

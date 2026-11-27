@@ -6,6 +6,7 @@ struct MainWindow: View {
     @Bindable var model: PortlaneModel
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
     @FocusState private var searchFocused: Bool
     @State private var sidebarVisible = true
     private var style: PortlaneStyle { PortlaneStyle(scheme: scheme) }
@@ -30,7 +31,7 @@ struct MainWindow: View {
             TunnelEditor(request: request, model: model)
         }
         .sheet(item: $model.importPreview) { preview in
-            ImportSheet(preview: preview, model: model)
+            ImportSheet(preview: preview) { try model.importSelected($0, kind: preview.kind) }
         }
         .sheet(isPresented: Binding(get: { model.logID != nil }, set: { if !$0 { model.logID = nil } })) {
             if let id = model.logID, let tunnel = model.store.tunnel(id) {
@@ -46,6 +47,7 @@ struct MainWindow: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in model.refreshDiscovery() }
         .onAppear {
+            model.openMainWindow = { [openWindow] in openWindow(id: "main") }
             if let error = model.store.loadError { model.errorMessage = error }
             model.refreshDiscovery()
         }

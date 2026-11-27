@@ -8,7 +8,8 @@ import PortlaneCore
 final class TunnelManager {
     let store: TunnelStore
     let prompts = PromptPresenter()
-    let sshPath = "/usr/bin/ssh"
+    private let preferences: PortlanePreferences
+    var sshPath: String { preferences.sshPath }
     private let demo: Bool
     private(set) var runtimes: [UUID: TunnelRuntime] = [:]
     private(set) var runningPIDs: Set<Int32> = []
@@ -19,9 +20,18 @@ final class TunnelManager {
         return await self.answer(request)
     }
 
-    init(store: TunnelStore, demo: Bool = false) {
+    init(store: TunnelStore, demo: Bool = false, preferences: PortlanePreferences = PortlanePreferences()) {
         self.store = store
         self.demo = demo
+        self.preferences = preferences
+    }
+
+    /// Only tunnels explicitly marked for launch are connected when the app starts.
+    func connectOnLaunch() {
+        guard !demo else { return }
+        for tunnel in store.tunnels where tunnel.autoConnect {
+            connect(tunnel.id)
+        }
     }
 
     func startServices() {
@@ -106,6 +116,7 @@ final class TunnelManager {
     }
 
     private func resumeAfterWake() {
+        guard preferences.reconnectOnWake else { return }
         for runtime in runtimes.values where runtime.desiredOn {
             guard let tunnel = store.tunnel(runtime.tunnelID), tunnel.autoReconnect else { continue }
             if runtime.state == .connected {
@@ -114,6 +125,19 @@ final class TunnelManager {
                 runtime.retryNow()
             }
         }
+    }
+
+    func notifyConnected(_ id: UUID) {
+        guard !demo, preferences.notifyOnConnect, let tunnel = store.tunnel(id) else { return }
+        TunnelNotifications.post(title: L10n.text("\(tunnel.displayName) connected", "\(tunnel.displayName) 已连接"))
+    }
+
+    func notifyFailure(_ id: UUID, message: String, interrupted: Bool) {
+        guard !demo, preferences.notifyOnFailure, let tunnel = store.tunnel(id) else { return }
+        let name = tunnel.displayName
+        let title = interrupted ? L10n.text("\(name) disconnected unexpectedly", "\(name) 意外中断")
+            : L10n.text("\(name) could not connect", "\(name) 连接失败")
+        TunnelNotifications.post(title: title, body: message)
     }
 
     /// Use live `Process` owners exclusively. A PID saved on disk is insufficient proof of ownership.
