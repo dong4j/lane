@@ -71,7 +71,8 @@ struct GeneralSettings: View {
         Group {
             Toggle(L10n.text("Open Lane at login", "登录时启动 Lane"), isOn: Binding(
                 get: { loginStatus == .enabled || loginStatus == .requiresApproval },
-                set: setLoginItem
+                // Swift 6.2 crashes when it emits a direct reference to this actor-isolated setter.
+                set: { enabled in setLoginItem(enabled) }
             ))
             .disabled(loginStatus == nil || loginStatus == .notFound)
 
