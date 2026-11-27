@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 758 646">
+  <title>Portlane v2 · 新建隧道</title>
+  <desc>点选一种转发方式，查看对应的端口字段、用途和连接发起方向。</desc>
+  <!-- This preview uses the Pen exports at 1× so the segments and path overlays match the editable boards. -->
+  <style>
+    .mode { display: none; pointer-events: none; }
+    .mode:target, :root:not(:has(.mode:target)) .initial { display: inline; }
+    .segment { cursor: pointer; }
+    .segment:focus-visible rect { stroke: #5b49c8; stroke-width: 2; }
+    .pulse {
+      offset-anchor: 0 0;
+      animation: travel 2.75s linear infinite, fade 2.75s linear infinite;
+    }
+    .branch { animation: branch-travel 5.5s linear infinite, branch-fade 5.5s linear infinite; }
+    .second-branch { animation-delay: -2.75s; }
+    @keyframes travel { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+    @keyframes fade { 0%, 100% { opacity: 0; } 12%, 88% { opacity: 1; } }
+    @keyframes branch-travel { 0% { offset-distance: 0%; } 50%, 100% { offset-distance: 100%; } }
+    @keyframes branch-fade { 0%, 50%, 100% { opacity: 0; } 6%, 44% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .pulse { display: none; animation: none; } }
+  </style>
+  <defs>
+    <g id="pulse-mark">
+      <path d="M-27 0H0" stroke="currentColor" stroke-opacity=".23" stroke-linecap="round" />
+      <path d="M-13 0H0" stroke="currentColor" stroke-opacity=".48" stroke-linecap="round" />
+      <circle r="2.6" fill="currentColor" style="filter: drop-shadow(0 0 4px currentColor)" />
+    </g>
+    <!-- Keep the pulse under the Mac, gateway and destination cards in the flattened artwork. -->
+    <clipPath id="local-rails">
+      <path d="M210 398H321V474H210Z M437 398H527V474H437Z" />
+    </clipPath>
+    <clipPath id="remote-rails">
+      <path d="M210 398H321V474H210Z M437 398H543V474H437Z" />
+    </clipPath>
+    <clipPath id="dynamic-rails">
+      <path d="M210 398H321V474H210Z M437 398H549V474H437Z" />
+    </clipPath>
+  </defs>
+  <g id="local" class="mode initial">
+    <image href="editor-local.png" width="758" height="646"
+           aria-label="本地转发。在 Mac 连接 15432，经 SSH 主机访问固定服务。" />
+    <g clip-path="url(#local-rails)" aria-hidden="true">
+      <use href="#pulse-mark" class="pulse" color="#c9bfff" style="offset-path: path('M200 436H558')" />
+    </g>
+  </g>
+  <g id="remote" class="mode">
+    <image href="editor-remote.png" width="758" height="646"
+           aria-label="远程转发。在 SSH 服务器连接 18080，访问 Mac 上的服务。" />
+    <g clip-path="url(#remote-rails)" aria-hidden="true">
+      <use href="#pulse-mark" class="pulse" color="#f7b6d3" style="offset-path: path('M558 436H200')" />
+    </g>
+  </g>
+  <g id="dynamic" class="mode">
+    <image href="editor-dynamic.png" width="758" height="646"
+           aria-label="动态转发。在 Mac 使用 SOCKS5 端口 1080，由客户端为每个请求选择目的地。" />
+    <g clip-path="url(#dynamic-rails)" color="#89ebd7" aria-hidden="true">
+      <!-- Match the Pen sequence by giving the two destinations alternating 2.75-second turns. -->
+      <use href="#pulse-mark" class="pulse branch" style="offset-path: path('M200 436H371C417 436 467 411.2 513 411.2H558')" />
+      <use href="#pulse-mark" class="pulse branch second-branch" style="offset-path: path('M200 436H371C417 436 467 460.8 513 460.8H558')" />
+    </g>
+  </g>
+  <a class="segment" href="#local" aria-label="本地转发 -L">
+    <rect x="31" y="182" width="230" height="31" rx="7" fill="transparent" />
+  </a>
+  <a class="segment" href="#remote" aria-label="远程转发 -R">
+    <rect x="264" y="182" width="230" height="31" rx="7" fill="transparent" />
+  </a>
+  <a class="segment" href="#dynamic" aria-label="动态转发 -D">
+    <rect x="497" y="182" width="230" height="31" rx="7" fill="transparent" />
+  </a>
+</svg>
