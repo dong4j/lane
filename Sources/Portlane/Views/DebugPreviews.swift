@@ -11,7 +11,7 @@ enum DebugPreviews {
     static func showMenuHarness(model: PortlaneModel) {
         let window = NSWindow(contentRect: NSRect(x: 160, y: 160, width: 460, height: 650),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Portlane Menu Check"
+        window.title = "Lane Menu Check"
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: MenuPreviewHarness(model: model))
         window.center()
@@ -62,7 +62,7 @@ enum DebugPreviews {
                 try png.write(to: output.appending(path: "icon.png"))
             }
         } catch {
-            NSLog("Portlane: %@", error.localizedDescription)
+            NSLog("Lane: %@", error.localizedDescription)
         }
     }
 

@@ -198,7 +198,7 @@ public enum SSHLogParser {
             if m.lowercased().contains("too many") { return String(localized: "The server rejected the login (too many attempts). Check your key or password.") }
             return String(localized: "The server rejected the login. Check the user name, password or private key.")
         case .hostKeyProblem(let m):
-            if m.lowercased().contains("changed") { return String(localized: "The server's host key has changed. This could be a man-in-the-middle attack; Porthole will not connect.") }
+            if m.lowercased().contains("changed") { return String(localized: "The server's host key has changed. This could be a man-in-the-middle attack; Lane will not connect.") }
             if m.lowercased().contains("no matching host key type") { return String(localized: "The server offers no host key type this Mac accepts. Adjust “Host key algorithms” in Advanced settings.") }
             return String(localized: "The server's identity could not be verified.")
         case .connectionFailed(let m):

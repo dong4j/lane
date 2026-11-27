@@ -36,7 +36,7 @@ struct ImportSheet: View {
                                     Text(rule.commandString).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                                 }
                                 if tunnel.autoConnect {
-                                    Text(L10n.text("Connects when Portlane opens", "启动 Portlane 时连接"))
+                                    Text(L10n.text("Connects when Lane opens", "启动 Lane 时连接"))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                             }

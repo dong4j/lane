@@ -144,17 +144,26 @@ struct AgentAccessTests {
 
     @Test
     func generatedRecipesPreserveTheExecutableAndArguments() throws {
-        let config = AgentMCPConfiguration(executable: "/Applications/Portlane Beta.app/Contents/MacOS/Portlane",
-                                          credentialFile: "/tmp/Dong's Pairing/one.pairing")
+        let config = AgentMCPConfiguration(executable: "/Applications/Lane Beta.app/Contents/MacOS/Lane",
+                                          credentialFile: "/tmp/Client's Pairing/one.pairing")
         let json = try #require(try JSONSerialization.jsonObject(with: Data(config.json.utf8)) as? [String: Any])
         let servers = try #require(json["mcpServers"] as? [String: [String: Any]])
-        let entry = try #require(servers["portlane"])
+        let entry = try #require(servers["lane"])
         #expect(entry["command"] as? String == config.executable)
         #expect(entry["args"] as? [String] == config.args)
         #expect(entry["env"] == nil)
-        #expect(config.codexCommand == "codex mcp add portlane -- '/Applications/Portlane Beta.app/Contents/MacOS/Portlane' --mcp-stdio --credential-file '/tmp/Dong'\\''s Pairing/one.pairing'")
-        #expect(config.claudeCommand.hasPrefix("claude mcp add --transport stdio --scope user portlane -- "))
+        #expect(config.codexCommand == "codex mcp add lane -- '/Applications/Lane Beta.app/Contents/MacOS/Lane' --mcp-stdio --credential-file '/tmp/Client'\\''s Pairing/one.pairing'")
+        #expect(config.claudeCommand.hasPrefix("claude mcp add --transport stdio --scope user lane -- "))
         #expect(config.cursorJSON.contains(#""stdio""#))
+    }
+
+    @Test
+    func laneMCPNamesPreserveCallsFromExistingClients() {
+        #expect(AgentTool.allCases.map(\.mcpName) == ["lane_list", "lane_request", "lane_status", "lane_release"])
+        for tool in AgentTool.allCases {
+            #expect(AgentTool(mcpName: tool.mcpName) == tool)
+            #expect(AgentTool(mcpName: tool.rawValue) == tool)
+        }
     }
 
     @MainActor

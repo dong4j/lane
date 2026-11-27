@@ -32,10 +32,10 @@ struct GeneralSettings: View {
                     Text("English").tag(PortlanePreferences.Language.english)
                 }
                 if preferences.language != L10n.launchedLanguage {
-                    Text(L10n.text("The language changes the next time you open Portlane.", "下次启动 Portlane 时应用所选语言。"))
+                    Text(L10n.text("The language changes the next time you open Lane.", "下次启动 Lane 时应用所选语言。"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Picker(L10n.text("Show Portlane in", "Portlane 显示位置"), selection: $preferences.presentation) {
+                Picker(L10n.text("Show Lane in", "Lane 显示位置"), selection: $preferences.presentation) {
                     Text(L10n.text("Dock and Menu Bar", "程序坞与菜单栏")).tag(PortlanePreferences.Presentation.both)
                     Text(L10n.text("Dock Only", "仅程序坞")).tag(PortlanePreferences.Presentation.dockOnly)
                     Text(L10n.text("Menu Bar Only", "仅菜单栏")).tag(PortlanePreferences.Presentation.menuBarOnly)
@@ -48,8 +48,8 @@ struct GeneralSettings: View {
                        isOn: $preferences.notifyOnFailure)
 
                 if notificationsEnabled, notificationStatus == .denied {
-                    Text(L10n.text("Allow notifications for Portlane in System Settings › Notifications.",
-                                   "请在「系统设置 → 通知」中允许 Portlane 发送通知。"))
+                    Text(L10n.text("Allow notifications for Lane in System Settings › Notifications.",
+                                   "请在「系统设置 → 通知」中允许 Lane 发送通知。"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let notificationError, notificationsEnabled {
@@ -69,7 +69,7 @@ struct GeneralSettings: View {
 
     private var loginItem: some View {
         Group {
-            Toggle(L10n.text("Open Portlane at login", "登录时启动 Portlane"), isOn: Binding(
+            Toggle(L10n.text("Open Lane at login", "登录时启动 Lane"), isOn: Binding(
                 get: { loginStatus == .enabled || loginStatus == .requiresApproval },
                 set: setLoginItem
             ))

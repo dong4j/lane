@@ -266,7 +266,7 @@ struct TunnelEditor: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 18) {
-                        Toggle(L10n.text("Connect when Portlane opens", "启动 Portlane 时连接"), isOn: $autoConnect)
+                        Toggle(L10n.text("Connect when Lane opens", "启动 Lane 时连接"), isOn: $autoConnect)
                         Toggle(L10n.text("Reconnect automatically", "自动重连"), isOn: $reconnect)
                     }
                     HStack(spacing: 18) {

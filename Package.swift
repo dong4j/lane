@@ -3,9 +3,9 @@ import PackageDescription
 
 // Keep the OpenSSH data types and parsers independently testable.
 let package = Package(
-    name: "Portlane",
+    name: "Lane",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "Portlane", targets: ["Portlane"])],
+    products: [.executable(name: "Lane", targets: ["Portlane"])],
     targets: [
         .target(name: "PortlaneCore"),
         .executableTarget(name: "Portlane", dependencies: ["PortlaneCore"]),

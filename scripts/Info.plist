@@ -5,11 +5,13 @@
     <key>CFBundleIdentifier</key>
     <string>site.dong4j.portlane</string>
     <key>CFBundleExecutable</key>
-    <string>Portlane</string>
+    <string>Lane</string>
+    <key>CFBundleDisplayName</key>
+    <string>Lane</string>
     <key>CFBundleName</key>
-    <string>Portlane</string>
+    <string>Lane</string>
     <key>CFBundleIconFile</key>
-    <string>Portlane</string>
+    <string>Lane</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -20,5 +22,7 @@
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>LaneProjectURL</key>
+    <string>https://github.com/dong4j/lane</string>
 </dict>
 </plist>

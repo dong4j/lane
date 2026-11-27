@@ -50,7 +50,7 @@ struct LaneMenuBar: View {
             }
             if !tunnels.isEmpty {
                 VStack(spacing: 2) {
-                    section(L10n.text("Managed by Portlane", "Portlane 管理"),
+                    section(L10n.text("Managed by Lane", "Lane 管理"),
                             value: L10n.text("\(model.manager.connectedCount) connected", "\(model.manager.connectedCount) 条已连接"))
                     ForEach(tunnels) { tunnel in managedRow(tunnel) }
                 }
@@ -75,7 +75,7 @@ struct LaneMenuBar: View {
     private var header: some View {
         HStack(spacing: 8) {
             LaneGlyph(size: 25)
-            Text("Portlane").font(.system(size: 16, weight: .semibold)).foregroundStyle(style.text)
+            Text("Lane").font(.system(size: 16, weight: .semibold)).foregroundStyle(style.text)
             Spacer()
             Button {
                 model.refreshDiscovery()
@@ -108,7 +108,7 @@ struct LaneMenuBar: View {
                     Button(L10n.text("Agent Activity…", "Agent 活动…"), action: showAgentActivity)
                 }
                 Divider()
-                Button(L10n.text("Quit Portlane", "退出 Portlane")) { NSApp.terminate(nil) }
+                Button(L10n.text("Quit Lane", "退出 Lane")) { NSApp.terminate(nil) }
             } label: {
                 Image(systemName: "ellipsis").frame(width: 24, height: 28)
             }

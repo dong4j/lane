@@ -41,7 +41,7 @@ struct MainWindow: View {
         .sheet(isPresented: $model.showingAgentActivity) {
             AgentActivity(model: model)
         }
-        .alert(L10n.text("Portlane", "Portlane"), isPresented: Binding(
+        .alert("Lane", isPresented: Binding(
             get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } }
         )) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
@@ -62,7 +62,7 @@ struct MainWindow: View {
             search
             ScrollView {
                 VStack(alignment: .leading, spacing: 3) {
-                    sectionTitle(L10n.text("Managed by Portlane", "Portlane 管理"))
+                    sectionTitle(L10n.text("Managed by Lane", "Lane 管理"))
                     ForEach(model.matchingTunnels) { tunnel in managedRow(tunnel) }
                     if model.store.tunnels.isEmpty, !model.externalSessions.isEmpty, model.query.isEmpty {
                         Button { model.previewSSHConfig() } label: {
@@ -148,7 +148,7 @@ struct MainWindow: View {
     private var sidebarHeader: some View {
         HStack(spacing: 8) {
             LaneGlyph(size: 25)
-            Text("Portlane").font(.system(size: 17, weight: .semibold))
+            Text("Lane").font(.system(size: 17, weight: .semibold))
             Spacer()
             sidebarToggle(hiding: true)
         }

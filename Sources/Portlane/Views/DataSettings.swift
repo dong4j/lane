@@ -18,7 +18,7 @@ struct DataSettings: View {
                         finish { preview = try model.sshConfigImport() }
                     }
                 }
-                LabeledContent(L10n.text("Portlane, Porthole or Codinn", "Portlane、Porthole 或 Codinn")) {
+                LabeledContent(L10n.text("Lane, Porthole or Codinn", "Lane、Porthole 或 Codinn")) {
                     Button(L10n.text("Choose File…", "选择文件…"), action: chooseBackup)
                 }
             }
@@ -61,7 +61,7 @@ struct DataSettings: View {
                 feedback = L10n.text("Imported \(count) tunnels.", "已导入 \(count) 条隧道。")
             }
         }
-        .alert("Portlane", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+        .alert("Lane", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button(L10n.text("OK", "好"), role: .cancel) { error = nil }
         } message: {
             Text(error ?? "")
@@ -83,7 +83,7 @@ struct DataSettings: View {
             let panel = NSSavePanel()
             panel.title = L10n.text("Export Tunnel Backup", "导出隧道备份")
             panel.allowedContentTypes = [.json]
-            panel.nameFieldStringValue = "Portlane Tunnels.json"
+            panel.nameFieldStringValue = "Lane Tunnels.json"
             guard panel.runModal() == .OK, let file = panel.url else { return }
             try backup.write(to: file, options: .atomic)
             feedback = L10n.text("Exported “\(file.lastPathComponent)”.", "已导出「\(file.lastPathComponent)」。")

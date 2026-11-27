@@ -39,7 +39,7 @@ final class TunnelManager {
         do {
             try askpass.start()
         } catch {
-            NSLog("Portlane: %@", error.localizedDescription)
+            NSLog("Lane: %@", error.localizedDescription)
         }
         network.onBecameReachable = { [weak self] in self?.retryWaitingSessions() }
         network.start()

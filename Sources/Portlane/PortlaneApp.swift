@@ -27,7 +27,7 @@ struct PortlaneApp: App {
     }
 
     var body: some Scene {
-        Window("Portlane", id: "main") {
+        Window("Lane", id: "main") {
             MainWindow(model: delegate.model)
                 .preferredColorScheme(preferredScheme)
         }
@@ -54,7 +54,7 @@ struct PortlaneApp: App {
                 .preferredColorScheme(preferredScheme)
         } label: {
             Image(systemName: delegate.model.manager.hasConnectedSession ? "point.3.connected.trianglepath.dotted" : "arrow.left.arrow.right")
-                .accessibilityLabel("Portlane")
+                .accessibilityLabel("Lane")
         }
         .menuBarExtraStyle(.window)
 
@@ -69,7 +69,7 @@ struct PortlaneApp: App {
 @MainActor
 final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     let model = PortlaneModel(demo: CommandLine.arguments.contains {
-        ["--demo", "--render-previews", "--menu-layout-check"].contains($0)
+        ["--demo", "--menu-layout-check"].contains($0)
     })
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -82,12 +82,6 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
-        if let option = CommandLine.arguments.firstIndex(of: "--render-previews"),
-           CommandLine.arguments.indices.contains(option + 1) {
-            DebugPreviews.write(model: model, directory: CommandLine.arguments[option + 1])
-            NSApp.terminate(nil)
-            return
-        }
         if CommandLine.arguments.contains("--menu-layout-check") {
             DebugPreviews.showMenuHarness(model: model)
             return
@@ -97,7 +91,7 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
             UNUserNotificationCenter.current().delegate = self
             model.agents.approvalNeeded = {
                 TunnelNotifications.post(title: L10n.text("An Agent tunnel needs approval", "有一条 Agent 隧道待审批"),
-                                         body: L10n.text("Review the route in Portlane.", "请在 Portlane 中确认转发路径。"),
+                                         body: L10n.text("Review the route in Lane.", "请在 Lane 中确认转发路径。"),
                                          category: TunnelNotifications.agentApproval)
             }
         }

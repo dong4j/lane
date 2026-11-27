@@ -299,8 +299,8 @@ private extension AgentLease.Reason {
         case .sshFailed: L10n.text("SSH could not start or maintain the forwarding", "SSH 未能建立或维持转发")
         case .startupTimedOut: L10n.text("SSH startup timed out", "SSH 启动超时")
         case .approvalTimedOut: L10n.text("Approval timed out", "等待审批超时")
-        case .appQuit: L10n.text("Portlane quit", "Portlane 已退出")
-        case .appRestarted: L10n.text("Portlane restarted", "Portlane 已重启")
+        case .appQuit: L10n.text("Lane quit", "Lane 已退出")
+        case .appRestarted: L10n.text("Lane restarted", "Lane 已重启")
         }
     }
 }

@@ -32,9 +32,9 @@ enum DemoContent {
 
     /// Recreates the two reported discovery states using synthetic processes and listeners.
     static var externalSessions: [ExternalSession] {
-        let remote = SSHInvocation(arguments: ["ssh", "-N", "-R", "18080:127.0.0.1:3000", "108"])
+        let remote = SSHInvocation(arguments: ["ssh", "-N", "-R", "18080:127.0.0.1:3000", "preview-relay"])
         let local = SSHInvocation(arguments: ["ssh", "-N", "-L", "3111:127.0.0.1:3111",
-                                              "-L", "3113:127.0.0.1:3113", "m4"])
+                                              "-L", "3113:127.0.0.1:3113", "dev-box"])
         return [
             ExternalSession(pid: 10001, invocation: remote, listeners: []),
             ExternalSession(pid: 10002, invocation: local,

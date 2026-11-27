@@ -1,0 +1,53 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, test, and package
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - name: Check out Lane
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          python3 --version
+
+      - name: Build Debug app
+        run: ./scripts/build-app.sh debug
+
+      - name: Run Swift and loopback SSH tests
+        run: |
+          export PORTLANE_TEST_MCP_HELPER="$PWD/.build/Lane.app/Contents/MacOS/Lane"
+          ./scripts/test-loopback.py
+
+      - name: Build and verify Release app
+        run: |
+          ./scripts/build-app.sh release
+          codesign --verify --strict .build/Lane.app
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent .build/Lane.app dist/Lane-macOS-arm64.zip
+
+      - name: Upload Lane.app
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: dist/Lane-macOS-arm64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 30

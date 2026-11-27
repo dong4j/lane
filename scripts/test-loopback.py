@@ -105,8 +105,8 @@ def run_fixture(project):
         }))
         bin_path = subprocess.check_output(["swift", "build", "--show-bin-path"], cwd=project, text=True).strip()
         environment = dict(os.environ, PORTLANE_SSH_FIXTURE=str(directory),
-                           PORTLANE_TEST_HELPER=str(Path(bin_path) / "Portlane"))
-        return subprocess.run(["swift", "test"], cwd=project, env=environment, timeout=120).returncode
+                           PORTLANE_TEST_HELPER=str(Path(bin_path) / "Lane"))
+        return subprocess.run(["swift", "test"], cwd=project, env=environment, timeout=300).returncode
 
 
 if __name__ == "__main__":

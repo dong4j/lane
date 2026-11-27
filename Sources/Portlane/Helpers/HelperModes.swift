@@ -19,7 +19,7 @@ enum AskpassHelper {
             FileHandle.standardOutput.write(Data((reply.answer + "\n").utf8))
             return 0
         } catch {
-            writeStderr("Portlane askpass: \(error)")
+            writeStderr("Lane askpass: \(error)")
             return 1
         }
     }
@@ -32,7 +32,7 @@ enum AskpassHelper {
 enum ProxyHelper {
     static func run(_ args: [String]) -> Int32 {
         guard args.count >= 5, let proxyPort = Int(args[2]), let targetPort = Int(args[4]) else {
-            writeStderr("usage: Portlane --proxy-connect <socks4|socks5|http> <proxyHost> <proxyPort> <targetHost> <targetPort> [username [ask-password|no-password]]")
+            writeStderr("usage: Lane --proxy-connect <socks4|socks5|http> <proxyHost> <proxyPort> <targetHost> <targetPort> [username [ask-password|no-password]]")
             return 2
         }
         let type = args[0], proxyHost = args[1], targetHost = args[3]
@@ -79,7 +79,7 @@ enum ProxyHelper {
                 let header = try TCP.receiveHTTPHeader(fd)
                 try ProxyHandshake.parseHTTPConnectResponse(header)
             default:
-            writeStderr("Portlane: unknown proxy type \(type)")
+            writeStderr("Lane: unknown proxy type \(type)")
                 return 2
             }
         } catch {

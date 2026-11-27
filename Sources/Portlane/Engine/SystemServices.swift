@@ -33,7 +33,7 @@ enum Keychain {
         if result == errSecSuccess { return true }
         guard result == errSecItemNotFound else { return false }
         attributes[kSecValueData as String] = data
-        attributes[kSecAttrLabel as String] = "Portlane · SSH"
+        attributes[kSecAttrLabel as String] = "Lane · SSH"
         return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
     }
 

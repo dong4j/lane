@@ -87,18 +87,18 @@ struct PortlaneSettings: View {
         .padding(.vertical, 12)
     }
 
-    /// A project link is supplied by the bundle when Portlane has a published homepage.
+    /// The packaged app supplies its own project homepage.
     private var about: some View {
         let bundle = Bundle.main
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-        let homepage = (bundle.object(forInfoDictionaryKey: "PortlaneProjectURL") as? String).flatMap(URL.init(string:))
+        let homepage = (bundle.object(forInfoDictionaryKey: "LaneProjectURL") as? String).flatMap(URL.init(string:))
         let license = bundle.url(forResource: "Porthole-MIT", withExtension: "txt")
         return VStack(spacing: 10) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 82, height: 82)
                 .accessibilityHidden(true)
-            Text("Portlane").font(.title.weight(.semibold))
+            Text("Lane").font(.title.weight(.semibold))
             Text(L10n.text("Version \(version)", "版本 \(version)"))
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)

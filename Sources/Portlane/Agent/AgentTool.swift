@@ -8,6 +8,14 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
     case status = "portlane_status"
     case release = "portlane_release"
 
+    /// Keep the existing helper-to-app wire values while advertising the Lane names to clients.
+    var mcpName: String { "lane_" + rawValue.dropFirst("portlane_".count) }
+
+    init?(mcpName: String) {
+        guard let tool = Self(rawValue: mcpName) ?? Self.allCases.first(where: { $0.mcpName == mcpName }) else { return nil }
+        self = tool
+    }
+
     var definition: [String: Any] {
         let description: String
         let properties: [String: Any]
@@ -18,14 +26,14 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
         }
         switch self {
         case .list:
-            description = "List local SSH forwarding rules explicitly shared in Portlane and check whether this pairing can request leases."
+            description = "List local SSH forwarding rules explicitly shared in Lane and check whether this pairing can request leases."
             properties = [:]
             required = []
         case .request:
             description = """
-                Request a time-limited local SSH forwarding lease. Use a shared rule ID from portlane_list, or request approval for a \
-                temporary destination through a saved SSH profile or a known external loopback address. Use portlane_status until ready \
-                and portlane_release when the work is done.
+                Request a time-limited local SSH forwarding lease. Use a shared rule ID from lane_list, or request approval for a \
+                temporary destination through a saved SSH profile or a known external loopback address. Use lane_status until ready \
+                and lane_release when the work is done.
                 """
             properties = [
                 "kind": ["type": "string", "enum": ["shared", "temporary", "external"]],
@@ -34,8 +42,8 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
                 "project": string("Optional project label supplied by the client. Keep credentials out of this field."),
                 "ttl_seconds": ["type": "integer", "minimum": 1, "maximum": 3_600, "default": 900,
                                 "description": "Lease duration from first readiness."],
-                "rule_id": string("Required for shared. Use an ID from portlane_list."),
-                "profile_id": string("Required for temporary. Use a saved SSH profile ID copied in Portlane Settings."),
+                "rule_id": string("Required for shared. Use an ID from lane_list."),
+                "profile_id": string("Required for temporary. Use a saved SSH profile ID copied in Lane Settings."),
                 "listen_host": ["type": "string", "enum": ["127.0.0.1", "::1"], "default": "127.0.0.1"],
                 "listen_port": port("Required for temporary. Port to listen on this Mac."),
                 "target_host": string("Required for temporary. TCP host as seen by the SSH server."),
@@ -48,16 +56,16 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
                 Get the current state of a lease owned by this pairing. Use its address only when state is ready. \
                 Readiness confirms a local listener; it does not probe the destination application.
                 """
-            properties = ["lease_id": string("Lease ID returned by portlane_request.")]
+            properties = ["lease_id": string("Lease ID returned by lane_request.")]
             required = ["lease_id"]
         case .release:
             description = "Release a lease owned by this pairing. The release is idempotent."
-            properties = ["lease_id": string("Lease ID returned by portlane_request.")]
+            properties = ["lease_id": string("Lease ID returned by lane_request.")]
             required = ["lease_id"]
         }
         let isReadOnly = self == .list || self == .status
         return [
-            "name": rawValue,
+            "name": mcpName,
             "description": description,
             "inputSchema": ["type": "object", "properties": properties, "required": required, "additionalProperties": false],
             "annotations": ["readOnlyHint": isReadOnly, "destructiveHint": self == .release, "idempotentHint": true,
@@ -150,10 +158,10 @@ struct AgentToolError: Codable, LocalizedError, Sendable {
         case Self.notPaired.code: "请在「设置 → Agent 接入」重新配对该客户端。"
         case Self.readOnly.code: "请在「设置 → Agent 接入」开启该客户端的申请权限。"
         case Self.notFound.code: "此客户端没有对应编号的申请。"
-        case Self.routeChanged.code: "请在 Portlane 中检查共享规则或已保存的 SSH 配置。"
+        case Self.routeChanged.code: "请在 Lane 中检查共享规则或已保存的 SSH 配置。"
         case Self.externalGone.code: "无法核实该地址存在外部 SSH 本地转发。"
         case Self.conflict.code: "该幂等键已用于参数不同的申请。"
-        case Self.unavailable.code: "请在这台 Mac 上打开 Portlane 后重试。"
+        case Self.unavailable.code: "请在这台 Mac 上打开 Lane 后重试。"
         case Self.storage.code: "无法访问 Agent 审计记录，请检查「设置 → Agent 接入」。"
         default: message
         }
@@ -161,14 +169,14 @@ struct AgentToolError: Codable, LocalizedError, Sendable {
     }
 
     static let invalidArguments = Self(code: "invalid_arguments", message: "Check the fields described by this tool.")
-    static let notPaired = Self(code: "not_paired", message: "Pair this client again in Portlane Settings → Agent Access.")
-    static let readOnly = Self(code: "read_only", message: "Allow requests for this pairing in Portlane Settings → Agent Access.")
+    static let notPaired = Self(code: "not_paired", message: "Pair this client again in Lane Settings → Agent Access.")
+    static let readOnly = Self(code: "read_only", message: "Allow requests for this pairing in Lane Settings → Agent Access.")
     static let notFound = Self(code: "not_found", message: "This pairing has no lease with that ID.")
-    static let routeChanged = Self(code: "route_unavailable", message: "Check the shared rule or saved SSH profile in Portlane.")
-    static let externalGone = Self(code: "external_unverified", message: "Portlane could not verify a live external loopback -L listener at that address.")
+    static let routeChanged = Self(code: "route_unavailable", message: "Check the shared rule or saved SSH profile in Lane.")
+    static let externalGone = Self(code: "external_unverified", message: "Lane could not verify a live external loopback -L listener at that address.")
     static let conflict = Self(code: "idempotency_conflict", message: "This key belongs to a request with different inputs.")
-    static let unavailable = Self(code: "portlane_unavailable", message: "Open Portlane on this Mac to use the Agent integration.")
-    static let storage = Self(code: "audit_unavailable", message: "Portlane could not access the local Agent audit. Check Agent Access settings.")
+    static let unavailable = Self(code: "portlane_unavailable", message: "Open Lane on this Mac to use the Agent integration.")
+    static let storage = Self(code: "audit_unavailable", message: "Lane could not access the local Agent audit. Check Agent Access settings.")
 }
 
 struct AgentCredential: Codable, Sendable {

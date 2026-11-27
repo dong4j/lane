@@ -4,33 +4,35 @@ import PortlaneCore
 
 /// The bundled stdio mode negotiates MCP locally and forwards tool calls to the running app.
 enum AgentMCP {
+    static let name = "lane"
     static let mode = "--mcp-stdio"
     static let credentialOption = "--credential-file"
-    static let credentialEnvironment = "PORTLANE_MCP_CREDENTIAL_FILE"
+    static let credentialEnvironment = "LANE_MCP_CREDENTIAL_FILE"
 
     private static let modernRevision = "2026-07-28"
     private static let legacyRevisions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
     private static let protocolVersionKey = "io.modelcontextprotocol/protocolVersion"
     private static let clientCapabilitiesKey = "io.modelcontextprotocol/clientCapabilities"
     private static let serverInfoKey = "io.modelcontextprotocol/serverInfo"
-    private static let serverInfo = ["name": "portlane", "version": (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.0"]
+    private static let serverInfo = ["name": name, "version": (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.0"]
     private static let capabilities: [String: [String: Bool]] = ["tools": [:]]
     static let projectInstructions = """
-        Use Portlane MCP for new local SSH forwardings. Start with portlane_list and use portlane_request with a stable \
-        idempotency_key and a short purpose without secrets. Ask the user to approve temporary or external routes in Portlane. \
-        Poll portlane_status and use the local address only when the lease is ready. Call portlane_release when done. \
-        If Portlane is unavailable or refuses a request, report that to the user before using another SSH workflow.
+        Use Lane MCP for new local SSH forwardings. Start with lane_list and use lane_request with a stable \
+        idempotency_key and a short purpose without secrets. Ask the user to approve temporary or external routes in Lane. \
+        Poll lane_status and use the local address only when the lease is ready. Call lane_release when done. \
+        If Lane is unavailable or refuses a request, report that to the user before using another SSH workflow.
         """
 
     /// This mode never launches AppKit. Every stdout line is a JSON-RPC response.
     static func run(_ arguments: [String]) -> Int32 {
         let credentialPath: String?
         if arguments.isEmpty {
-            credentialPath = ProcessInfo.processInfo.environment[credentialEnvironment]
+            credentialPath = ProcessInfo.processInfo.environment[credentialEnvironment] ??
+                ProcessInfo.processInfo.environment["PORTLANE_MCP_CREDENTIAL_FILE"]
         } else if arguments.count == 2, arguments[0] == credentialOption {
             credentialPath = arguments[1]
         } else {
-            FileHandle.standardError.write(Data("Usage: Portlane --mcp-stdio --credential-file <path>\n".utf8))
+            FileHandle.standardError.write(Data("Usage: Lane --mcp-stdio --credential-file <path>\n".utf8))
             return EXIT_FAILURE
         }
         let credential = credentialPath.flatMap { path -> AgentCredential? in
@@ -99,7 +101,7 @@ enum AgentMCP {
         case "tools/list":
             result = ["tools": AgentTool.allCases.map(\.definition)]
         case "tools/call":
-            guard let name = parameters["name"] as? String, let tool = AgentTool(rawValue: name) else {
+            guard let name = parameters["name"] as? String, let tool = AgentTool(mcpName: name) else {
                 return rpcError(id: id, code: -32602, message: "Unknown tool")
             }
             if let arguments = parameters["arguments"], !(arguments is [String: Any]) {
@@ -152,12 +154,12 @@ struct AgentMCPConfiguration: Sendable {
     let credentialFile: String
 
     var args: [String] { [AgentMCP.mode, AgentMCP.credentialOption, credentialFile] }
-    var codexCommand: String { "codex mcp add portlane -- \(shellCommand)" }
-    var claudeCommand: String { "claude mcp add --transport stdio --scope user portlane -- \(shellCommand)" }
+    var codexCommand: String { "codex mcp add \(AgentMCP.name) -- \(shellCommand)" }
+    var claudeCommand: String { "claude mcp add --transport stdio --scope user \(AgentMCP.name) -- \(shellCommand)" }
     var argsJSON: String { Self.json(args) }
-    var json: String { Self.json(["mcpServers": ["portlane": ["command": executable, "args": args]]]) }
+    var json: String { Self.json(["mcpServers": [AgentMCP.name: ["command": executable, "args": args]]]) }
     var cursorJSON: String {
-        Self.json(["mcpServers": ["portlane": ["type": "stdio", "command": executable, "args": args]]])
+        Self.json(["mcpServers": [AgentMCP.name: ["type": "stdio", "command": executable, "args": args]]])
     }
 
     private var shellCommand: String { ([executable] + args).map(SSHCommandBuilder.shellQuote).joined(separator: " ") }
@@ -180,10 +182,10 @@ struct AgentMCPConfiguration: Sendable {
             process.standardError = FileHandle.nullDevice
             try process.run()
             let messages = """
-                {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"portlane-check","version":"1"}}}
+                {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"lane-check","version":"1"}}}
                 {"jsonrpc":"2.0","method":"notifications/initialized"}
                 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"portlane_list","arguments":{}}}
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lane_list","arguments":{}}}
                 {"jsonrpc":"2.0","id":4,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
                 {"jsonrpc":"2.0","id":5,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}
                 """
@@ -197,7 +199,7 @@ struct AgentMCPConfiguration: Sendable {
             guard process.terminationStatus == 0, results.count == 5,
                   (results[0]["result"] as? [String: Any])?["protocolVersion"] as? String == "2025-11-25",
                   let definitions = (results[1]["result"] as? [String: Any])?["tools"] as? [[String: Any]],
-                  Set(definitions.compactMap { $0["name"] as? String }) == Set(AgentTool.allCases.map(\.rawValue)),
+                  Set(definitions.compactMap { $0["name"] as? String }) == Set(AgentTool.allCases.map(\.mcpName)),
                   let result = results[2]["result"] as? [String: Any],
                   let structured = result["structuredContent"] as? [String: Any],
                   let discovery = results[3]["result"] as? [String: Any],
