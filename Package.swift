@@ -5,9 +5,11 @@ import PackageDescription
 let package = Package(
     name: "Portlane",
     platforms: [.macOS(.v14)],
+    products: [.executable(name: "Portlane", targets: ["Portlane"])],
     targets: [
         .target(name: "PortlaneCore"),
-        .testTarget(name: "PortlaneCoreTests", dependencies: ["PortlaneCore"])
+        .executableTarget(name: "Portlane", dependencies: ["PortlaneCore"]),
+        .testTarget(name: "PortlaneCoreTests", dependencies: ["PortlaneCore", "Portlane"])
     ],
     swiftLanguageModes: [.v6]
 )
