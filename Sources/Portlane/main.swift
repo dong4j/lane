@@ -6,6 +6,9 @@ let arguments = CommandLine.arguments
 if arguments.dropFirst().first == "--proxy-connect" {
     exit(ProxyHelper.run(Array(arguments.dropFirst(2))))
 }
+if arguments.dropFirst().first == AgentMCP.mode {
+    exit(AgentMCP.run(Array(arguments.dropFirst(2))))
+}
 if ProcessInfo.processInfo.environment[AskpassEnvironment.socketPath] != nil {
     exit(AskpassHelper.run(prompt: arguments.dropFirst().joined(separator: " ")))
 }

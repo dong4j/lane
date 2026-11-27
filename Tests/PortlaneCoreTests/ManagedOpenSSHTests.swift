@@ -171,6 +171,130 @@ struct ManagedOpenSSHTests {
         #expect(try request(["http://127.0.0.1:\(fixture.externalPorts[0])/external"]) == "portlane-fixture")
     }
 
+    /// Real listeners exercise the isolation boundary on launch, reconnect, release, and expiration.
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["PORTLANE_SSH_FIXTURE"] != nil))
+    @MainActor
+    func mcpLeasesShareOnlyTheAuthorizedListenerAndReapItAfterLastUse() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let directory = URL(fileURLWithPath: try #require(environment["PORTLANE_SSH_FIXTURE"]))
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: directory.appending(path: "manifest.json")))
+        let rule = Forwarding(bindAddress: "127.0.0.1", port: fixture.localPort, targetHost: "127.0.0.1", targetPort: fixture.webPort)
+        let sibling = Forwarding(bindAddress: "127.0.0.1", port: fixture.socksPort, targetHost: "127.0.0.1", targetPort: fixture.webPort)
+        let profile = Tunnel(name: "MCP fixture", host: "127.0.0.1", port: fixture.sshPort, user: NSUserName(),
+                             authMethod: .publicKey, identityFile: directory.appending(path: "client_ed25519").path,
+                             forwardings: [rule, sibling], autoReconnect: true, hostKeyPolicy: .strict, useSSHConfig: false,
+                             extraOptions: "UserKnownHostsFile=\(directory.appending(path: "known_hosts").path)\nGlobalKnownHostsFile=/dev/null\nGatewayPorts=yes")
+        let manager = TunnelManager(store: TunnelStore(fileURL: nil, samples: [profile]))
+        let files = AgentFiles(directory: directory.appending(path: "agent"), socketPath: directory.appending(path: "mcp.sock").path)
+        let access = AgentAccess(manager: manager, files: files)
+        access.start()
+        defer {
+            access.shutdown()
+            manager.shutdown()
+        }
+        let first = try access.pair("Codex fixture")
+        let second = try access.pair("Claude fixture")
+        let helper = try #require(environment["PORTLANE_TEST_MCP_HELPER"] ?? environment["PORTLANE_TEST_HELPER"])
+        let config = try #require(access.configuration(for: first.id, executable: helper))
+        #expect(try await config.check() == false)
+        try access.setRequestsEnabled(true)
+        try access.setClientRequests(first.id, enabled: true)
+        try access.setClientRequests(second.id, enabled: true)
+        try access.setShared(rule, from: profile, enabled: true)
+        let ruleID = try #require(access.ledger.shares.first?.id)
+        #expect(try await config.check() == true)
+        if let client = environment["PORTLANE_TEST_MCP_CLIENT"] {
+            try await runExternalMCPClient(client, configuration: config, directory: directory)
+            try await waitFor { manager.runningPIDs.isEmpty }
+        }
+
+        func call(_ client: AgentClient, _ tool: AgentTool, _ arguments: AgentToolArguments) async throws -> AgentToolResult {
+            let credential = try JSONDecoder().decode(AgentCredential.self, from: Data(contentsOf: files.credentialURL(client.id)))
+            return await access.handle(AgentToolCall(credential: credential, tool: tool, arguments: arguments))
+        }
+        let arguments = AgentToolArguments(kind: .shared, idempotencyKey: "shared-route", purpose: "Verify local forwarding", ruleID: ruleID)
+        let original = try #require(try await call(first, .request, arguments).lease)
+        let reused = try #require(try await call(second, .request, arguments).lease)
+        #expect(original.state == .connecting)
+        #expect(original.address == nil)
+        #expect(original.id != reused.id)
+        #expect(manager.runtimes.values.count == 1)
+        let runtime = try #require(manager.runtimes.values.first)
+
+        try await waitFor { runtime.state.isConnected || runtime.state.isFailure }
+        try #require(runtime.state.isConnected, "SSH output: \(runtime.logs.map(\.message).joined(separator: "\n"))")
+        let pid = try #require(runtime.pid)
+        #expect(try ExternalScanner.listeners(pids: [pid]).map(\.address) == ["127.0.0.1:\(fixture.localPort)"])
+        #expect(try request(["http://127.0.0.1:\(fixture.localPort)/agent"]) == "portlane-fixture")
+        let firstLookup = AgentToolArguments(leaseID: original.id)
+        let secondLookup = AgentToolArguments(leaseID: reused.id)
+        #expect(try await call(first, .status, firstLookup).lease?.address == "127.0.0.1:\(fixture.localPort)")
+        #expect(try await call(second, .status, secondLookup).lease?.state == .ready)
+        #expect(try await call(second, .status, firstLookup).error?.code == "not_found")
+
+        try #require(kill(pid, SIGTERM) == 0)
+        try await waitFor { if case .reconnecting = runtime.state { return true }; return false }
+        let reconnecting = try await call(first, .status, firstLookup).lease
+        #expect(reconnecting?.state == .reconnecting)
+        #expect(reconnecting?.address == nil)
+        try await waitFor { runtime.state.isConnected && runtime.pid != pid }
+        let reconnectedPID = try #require(runtime.pid)
+        #expect(try ExternalScanner.listeners(pids: [reconnectedPID]).map(\.port) == [fixture.localPort])
+        #expect(try await call(first, .release, firstLookup).lease?.state == .released)
+        #expect(try await call(second, .status, secondLookup).lease?.state == .ready)
+        #expect(runtime.pid == reconnectedPID)
+
+        var expiringArguments = arguments
+        expiringArguments.idempotencyKey = "expire-route"
+        expiringArguments.ttlSeconds = 1
+        let expiring = try #require(try await call(first, .request, expiringArguments).lease)
+        #expect(expiring.state == .ready)
+        try access.end(reused.id)
+        #expect(runtime.pid == reconnectedPID)
+        try await waitFor { runtime.state == .off }
+        #expect(try ExternalScanner.listeners(pids: [reconnectedPID]).isEmpty)
+        #expect(access.history.first?.id == expiring.id)
+        #expect(access.history.first?.state == .expired)
+
+        let temporaryArgs = AgentToolArguments(kind: .temporary, idempotencyKey: "conflict", purpose: "Verify port conflict audit",
+                                               profileID: profile.id, listenPort: fixture.externalPorts[0],
+                                               targetHost: "127.0.0.1", targetPort: fixture.webPort)
+        let blocked = try #require(try await call(first, .request, temporaryArgs).lease)
+        #expect(blocked.state == .pendingApproval)
+        #expect(manager.runningPIDs.isEmpty)
+        try await access.approve(blocked.id)
+        try await waitFor { access.history.first?.id == blocked.id }
+        #expect(access.history.first?.state == .failed)
+        #expect(access.history.first?.events.map(\.action) == [.requested, .approved, .failed])
+
+        var externalArgs = AgentToolArguments(kind: .external, idempotencyKey: "external", purpose: "Reuse external loopback")
+        externalArgs.externalAddress = "127.0.0.1:\(fixture.externalPorts[0])"
+        let external = try #require(try await call(first, .request, externalArgs).lease)
+        #expect(external.state == .pendingApproval)
+        #expect(external.address == nil)
+        try await access.approve(external.id)
+        let externalLookup = AgentToolArguments(leaseID: external.id)
+        #expect(try await call(first, .status, externalLookup).lease?.state == .ready)
+        #expect(try await call(first, .release, externalLookup).lease?.state == .released)
+        #expect(try request(["http://127.0.0.1:\(fixture.externalPorts[0])/agent-external"]) == "portlane-fixture")
+        #expect(access.history.first?.events.map(\.action) == [.requested, .approved, .reused, .released])
+    }
+
+    /// An opt-in client can exercise the exact JSON users get from Settings against this fixture.
+    private func runExternalMCPClient(_ client: String, configuration: AgentMCPConfiguration, directory: URL) async throws {
+        let recipe = directory.appending(path: "mcp.json")
+        try configuration.json.write(to: recipe, atomically: true, encoding: .utf8)
+        let status = try await Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: client)
+            process.arguments = [recipe.path]
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus
+        }.value
+        try #require(status == 0)
+    }
+
     @MainActor
     private func waitFor(_ condition: () -> Bool) async throws {
         for _ in 0..<100 {

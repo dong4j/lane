@@ -195,11 +195,11 @@ public enum UnixSocket {
         }
     }
 
-    /// Reads until a newline or EOF (max 64 KiB).
-    public static func readLine(_ fd: Int32) -> Data? {
+    /// Reads until a newline, EOF, or the caller's message size limit.
+    public static func readLine(_ fd: Int32, limit: Int = 65_536) -> Data? {
         var buffer = Data()
         var byte: UInt8 = 0
-        while buffer.count < 65_536 {
+        while buffer.count < limit {
             let n = read(fd, &byte, 1)
             if n < 0 && errno == EINTR { continue }
             if n <= 0 { return buffer.isEmpty ? nil : buffer }

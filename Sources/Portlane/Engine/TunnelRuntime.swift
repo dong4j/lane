@@ -8,6 +8,7 @@ import PortlaneCore
 @Observable
 final class TunnelRuntime {
     let tunnelID: UUID
+    private let credentialTunnelID: UUID?
 
     private(set) var state: TunnelState = .off
     private(set) var lastError: String?
@@ -41,11 +42,14 @@ final class TunnelRuntime {
 
     static let maxLogEntries = 2_000
 
-    init(tunnelID: UUID) {
+    init(tunnelID: UUID, credentialTunnelID: UUID? = nil) {
         self.tunnelID = tunnelID
+        self.credentialTunnelID = credentialTunnelID
     }
 
     var pid: Int32? { process?.isRunning == true ? process?.processIdentifier : nil }
+    var currentConfiguration: Tunnel? { tunnel }
+    var isAgentOwned: Bool { credentialTunnelID != nil }
 
     // MARK: Public control
 
@@ -81,6 +85,7 @@ final class TunnelRuntime {
         } else {
             state = .off
             clearForwardStatus()
+            if isAgentOwned { manager?.removeStoppedAgentRuntime(tunnelID) }
         }
     }
 
@@ -103,7 +108,7 @@ final class TunnelRuntime {
 
     func retryNow() {
         guard desiredOn, case .reconnecting = state,
-              let tunnel = manager?.store.tunnel(tunnelID) ?? tunnel, tunnel.autoReconnect else { return }
+              let tunnel, tunnel.autoReconnect else { return }
         retryTask?.cancel()
         launch(tunnel)
     }
@@ -375,7 +380,7 @@ final class TunnelRuntime {
         manager?.prompts.cancel(tunnelID: tunnelID)
         let wasConnected = wasConnectedThisRun
 
-        if restartRequested, desiredOn, let tunnel = manager?.store.tunnel(tunnelID) ?? tunnel {
+        if restartRequested, desiredOn, let tunnel {
             restartRequested = false
             attempt = 0
             launch(tunnel)
@@ -387,6 +392,7 @@ final class TunnelRuntime {
             state = .off
             clearForwardStatus()
             log(.info, String(localized: "Disconnected."))
+            if isAgentOwned { manager?.removeStoppedAgentRuntime(tunnelID) }
             return
         }
 
@@ -415,7 +421,7 @@ final class TunnelRuntime {
             retryTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(delay))
                 guard !Task.isCancelled, let self, self.desiredOn else { return }
-                if let latest = self.manager?.store.tunnel(self.tunnelID) ?? self.tunnel {
+                if let latest = self.tunnel {
                     self.launch(latest)
                 }
             }
@@ -459,12 +465,13 @@ final class TunnelRuntime {
     func answer(_ request: AskpassRequest) async -> AskpassReply {
         guard let manager, let tunnel = tunnel ?? manager.store.tunnel(tunnelID) else { return .cancelled }
         guard desiredOn else { return .cancelled }
+        let credentials = credentialTunnelID ?? tunnelID
 
         if request.kind == .proxyPassword {
-            if let saved = Keychain.get(Keychain.proxyPassword(tunnelID)) { return AskpassReply(ok: true, answer: saved) }
+            if let saved = Keychain.get(Keychain.proxyPassword(credentials)) { return AskpassReply(ok: true, answer: saved) }
             let response = await present(.init(tunnelID: tunnelID, tunnelName: tunnel.displayName, kind: .proxyPassword,
                                                message: String(localized: "Password for proxy user “\(tunnel.proxy.username)” at \(tunnel.proxy.host)"),
-                                               rememberAccount: Keychain.proxyPassword(tunnelID)))
+                                               rememberAccount: Keychain.proxyPassword(credentials)))
             return response
         }
 
@@ -473,7 +480,7 @@ final class TunnelRuntime {
         case .password:
             // OpenSSH may be asking for a configured jump host. Key by the prompt account, not the alias.
             let account = PromptClassifier.passwordAccount(in: request.prompt).map {
-                Keychain.tunnelPassword(tunnelID, account: "\($0.user)@\($0.host)")
+                Keychain.tunnelPassword(credentials, account: "\($0.user)@\($0.host)")
             }
             if let account, !usedSavedPasswords.contains(account), let saved = Keychain.get(account) {
                 usedSavedPasswords.insert(account)

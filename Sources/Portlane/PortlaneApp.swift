@@ -53,7 +53,7 @@ struct PortlaneApp: App {
             LaneMenuBar(model: delegate.model)
                 .preferredColorScheme(preferredScheme)
         } label: {
-            Image(systemName: delegate.model.manager.connectedCount > 0 ? "point.3.connected.trianglepath.dotted" : "arrow.left.arrow.right")
+            Image(systemName: delegate.model.manager.hasConnectedSession ? "point.3.connected.trianglepath.dotted" : "arrow.left.arrow.right")
                 .accessibilityLabel("Portlane")
         }
         .menuBarExtraStyle(.window)
@@ -95,7 +95,13 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         #endif
         if !model.demo, TunnelNotifications.available {
             UNUserNotificationCenter.current().delegate = self
+            model.agents.approvalNeeded = {
+                TunnelNotifications.post(title: L10n.text("An Agent tunnel needs approval", "有一条 Agent 隧道待审批"),
+                                         body: L10n.text("Review the route in Portlane.", "请在 Portlane 中确认转发路径。"),
+                                         category: TunnelNotifications.agentApproval)
+            }
         }
+        model.agents.start()
         model.manager.startServices()
         model.manager.connectOnLaunch()
         model.refreshDiscovery()
@@ -124,8 +130,15 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
         [.banner, .list]
     }
 
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        if response.notification.request.content.categoryIdentifier == TunnelNotifications.agentApproval {
+            await model.showAgentActivity()
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         DistributedNotificationCenter.default().removeObserver(self)
+        model.agents.shutdown()
         model.manager.shutdown()
     }
 }

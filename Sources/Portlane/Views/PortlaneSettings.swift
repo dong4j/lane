@@ -4,12 +4,13 @@ import SwiftUI
 /// The settings window uses native form controls within Portlane's shared light and dark surfaces.
 struct PortlaneSettings: View {
     private enum Page: CaseIterable {
-        case general, connection, data, about
+        case general, connection, agent, data, about
 
         var title: String {
             switch self {
             case .general: L10n.text("General", "通用")
             case .connection: L10n.text("Connection", "连接")
+            case .agent: L10n.text("Agent Access", "Agent 接入")
             case .data: L10n.text("Data", "数据")
             case .about: L10n.text("About", "关于")
             }
@@ -19,6 +20,7 @@ struct PortlaneSettings: View {
             switch self {
             case .general: "gearshape"
             case .connection: "link"
+            case .agent: "point.3.connected.trianglepath.dotted"
             case .data: "externaldrive"
             case .about: "info.circle"
             }
@@ -41,6 +43,7 @@ struct PortlaneSettings: View {
                     switch page {
                     case .general: GeneralSettings(preferences: model.preferences, demo: model.demo)
                     case .connection: ConnectionSettings(preferences: model.preferences)
+                    case .agent: AgentSettings(model: model)
                     case .data: DataSettings(model: model)
                     case .about: about
                     }

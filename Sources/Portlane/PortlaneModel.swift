@@ -28,6 +28,7 @@ final class PortlaneModel {
     let preferences: PortlanePreferences
     let store: TunnelStore
     let manager: TunnelManager
+    let agents: AgentAccess
     let demo: Bool
     private(set) var discovered: [ExternalSession] = []
     private(set) var refreshing = false
@@ -41,12 +42,14 @@ final class PortlaneModel {
     var editor: EditorRequest?
     var importPreview: ImportPreview?
     var logID: UUID?
+    var showingAgentActivity = false
 
     init(demo: Bool = false) {
         self.demo = demo
         preferences = PortlanePreferences(defaults: demo ? nil : .standard)
         store = demo ? TunnelStore(fileURL: nil, samples: DemoContent.tunnels) : TunnelStore()
         manager = TunnelManager(store: store, demo: demo, preferences: preferences)
+        agents = AgentAccess(manager: manager, files: store.fileURL.map(AgentFiles.live(tunnelFile:)))
         if demo { configureDemo() }
         pickAvailableSelection()
     }
@@ -54,6 +57,11 @@ final class PortlaneModel {
     func showMainWindow() {
         NSApp.activate()
         openMainWindow?()
+    }
+
+    func showAgentActivity() {
+        showMainWindow()
+        showingAgentActivity = true
     }
 
     var externalSessions: [ExternalSession] {
@@ -114,6 +122,7 @@ final class PortlaneModel {
     func save(_ tunnel: Tunnel, connect: Bool) throws {
         let previous = try store.save(tunnel)
         manager.tunnelDidChange(tunnel, previous: previous)
+        agents.libraryChanged()
         if connect, manager.runtimes[tunnel.id]?.desiredOn != true { manager.connect(tunnel.id) }
         query = ""
         selection = .managed(tunnel.id)
@@ -125,6 +134,7 @@ final class PortlaneModel {
         do {
             try store.remove(tunnel.id)
             manager.disconnect(tunnel.id)
+            agents.libraryChanged()
             if !demo { Keychain.removeTunnelCredentials(tunnel.id) }
             pickAvailableSelection()
         } catch {

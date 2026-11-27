@@ -45,6 +45,9 @@ struct LaneMenuBar: View {
         let tunnels = model.store.tunnels
         let sessions = model.externalSessions
         return VStack(spacing: 10) {
+            if !model.agents.pending.isEmpty || !model.agents.active.isEmpty {
+                agentGroup
+            }
             if !tunnels.isEmpty {
                 VStack(spacing: 2) {
                     section(L10n.text("Managed by Portlane", "Portlane 管理"),
@@ -100,6 +103,9 @@ struct LaneMenuBar: View {
                 Button(L10n.text("Settings…", "设置…")) {
                     NSApp.activate()
                     openSettings()
+                }
+                if !model.agents.ledger.clients.isEmpty || !model.agents.ledger.leases.isEmpty {
+                    Button(L10n.text("Agent Activity…", "Agent 活动…"), action: showAgentActivity)
                 }
                 Divider()
                 Button(L10n.text("Quit Portlane", "退出 Portlane")) { NSApp.terminate(nil) }
@@ -181,6 +187,70 @@ struct LaneMenuBar: View {
         .foregroundStyle(style.secondary)
         .padding(.horizontal, 7)
         .frame(height: 21)
+    }
+
+    private var agentGroup: some View {
+        let pending = model.agents.pending.count
+        let leases = model.agents.active
+        return VStack(spacing: 3) {
+            section(L10n.text("Agent Activity", "Agent 活动"), value: L10n.text("\(leases.count) active", "\(leases.count) 条进行中"))
+            if pending > 0 {
+                Button(action: showAgentActivity) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bell.badge").accessibilityHidden(true)
+                        Text(L10n.text("\(pending) awaiting approval", "\(pending) 条待审批")).fontWeight(.medium)
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
+                    }
+                    .foregroundStyle(style.warning)
+                    .padding(.horizontal, 9).frame(height: 31)
+                    .background(style.warningFill, in: RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 7)
+            }
+            ForEach(leases) { lease in
+                HStack(spacing: 5) {
+                    Button(action: showAgentActivity) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(lease.route.name).font(.system(size: 13, weight: .semibold))
+                            HStack(spacing: 4) {
+                                Text(lease.clientName)
+                                    .lineLimit(1).truncationMode(.middle)
+                                Text("·").accessibilityHidden(true)
+                                if lease.state == .ready, let expires = lease.expiresAt {
+                                    Text(expires, style: .timer).monospacedDigit().fixedSize()
+                                        .accessibilityLabel(L10n.text("Time remaining", "剩余时间"))
+                                } else {
+                                    Text(lease.state.displayLabel)
+                                }
+                            }
+                            .font(.caption).foregroundStyle(style.secondary)
+                        }
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(LaneHoverHighlight())
+                    if lease.state == .ready {
+                        CopyAction(model: model, value: lease.route.listenAddress, key: "agent-menu-\(lease.id)",
+                                   title: L10n.text("Copy Agent Address", "复制 Agent 隧道地址"), iconOnly: true)
+                    }
+                    Button(L10n.text("End", "结束")) {
+                        do { try model.agents.end(lease.id) }
+                        catch {
+                            model.errorMessage = error.localizedDescription
+                            showMainWindow()
+                        }
+                    }
+                    .buttonStyle(LaneButtonStyle())
+                    .accessibilityLabel(L10n.text("End lease for \(lease.clientName)", "结束 \(lease.clientName) 的申请"))
+                }
+                .padding(.horizontal, 7)
+            }
+        }
     }
 
     private func managedRow(_ tunnel: Tunnel) -> some View {
@@ -349,6 +419,11 @@ struct LaneMenuBar: View {
     private func showMainWindow() {
         NSApp.activate()
         openWindow(id: "main")
+    }
+
+    private func showAgentActivity() {
+        showMainWindow()
+        model.showingAgentActivity = true
     }
 }
 

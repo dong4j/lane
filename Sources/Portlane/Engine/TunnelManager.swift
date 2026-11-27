@@ -10,7 +10,7 @@ final class TunnelManager {
     let prompts = PromptPresenter()
     private let preferences: PortlanePreferences
     var sshPath: String { preferences.sshPath }
-    private let demo: Bool
+    let demo: Bool
     private(set) var runtimes: [UUID: TunnelRuntime] = [:]
     private(set) var runningPIDs: Set<Int32> = []
     @ObservationIgnored private let network = NetworkWatcher()
@@ -60,18 +60,42 @@ final class TunnelManager {
 
     func state(_ id: UUID) -> TunnelState { runtimes[id]?.state ?? .off }
 
-    var connectedCount: Int { runtimes.values.filter { $0.state == .connected }.count }
+    var connectedCount: Int { runtimes.values.filter { !$0.isAgentOwned && $0.state == .connected }.count }
+
+    var hasConnectedSession: Bool { runtimes.values.contains { $0.state == .connected } }
 
     func connect(_ id: UUID) {
         guard let tunnel = store.tunnel(id) else { return }
         let runtime = runtime(id)
         if demo {
+            runtime.updateConfiguration(tunnel)
             let ready = Dictionary(uniqueKeysWithValues: tunnel.enabledForwardings.map { ($0.id, ForwardStatus.active) })
             runtime.applyDemo(state: .connected, forwardStatus: ready)
         } else {
             startServices()
             runtime.start(tunnel)
         }
+    }
+
+    /// An Agent runtime is keyed separately so it can never pick up the saved profile's sibling rules.
+    func connectAgentRoute(_ route: AgentPreparedRoute) -> TunnelRuntime {
+        var tunnel = route.tunnel
+        tunnel.id = UUID()
+        let runtime = TunnelRuntime(tunnelID: tunnel.id, credentialTunnelID: route.key.profileID)
+        runtime.manager = self
+        runtimes[tunnel.id] = runtime
+        if demo {
+            runtime.updateConfiguration(tunnel)
+            runtime.applyDemo(state: .connected, forwardStatus: [route.rule.id: .active])
+        } else {
+            startServices()
+            runtime.start(tunnel)
+        }
+        return runtime
+    }
+
+    func removeStoppedAgentRuntime(_ id: UUID) {
+        if runtimes[id]?.isAgentOwned == true { runtimes.removeValue(forKey: id) }
     }
 
     func disconnect(_ id: UUID) {
@@ -118,7 +142,7 @@ final class TunnelManager {
     private func resumeAfterWake() {
         guard preferences.reconnectOnWake else { return }
         for runtime in runtimes.values where runtime.desiredOn {
-            guard let tunnel = store.tunnel(runtime.tunnelID), tunnel.autoReconnect else { continue }
+            guard let tunnel = runtime.currentConfiguration, tunnel.autoReconnect else { continue }
             if runtime.state == .connected {
                 runtime.restart(with: tunnel, reason: "Mac woke from sleep. Refreshing SSH.")
             } else {

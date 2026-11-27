@@ -38,6 +38,9 @@ struct MainWindow: View {
                 FullLogSheet(tunnel: tunnel, model: model)
             }
         }
+        .sheet(isPresented: $model.showingAgentActivity) {
+            AgentActivity(model: model)
+        }
         .alert(L10n.text("Portlane", "Portlane"), isPresented: Binding(
             get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } }
         )) {
@@ -94,6 +97,9 @@ struct MainWindow: View {
             }
             .scrollIndicators(.hidden)
             Divider().overlay(style.edge)
+            if !model.agents.ledger.clients.isEmpty || !model.agents.ledger.leases.isEmpty {
+                agentActivityButton
+            }
             HStack {
                 Button { model.newTunnel() } label: {
                     Label(L10n.text("New tunnel", "新建隧道"), systemImage: "plus")
@@ -114,6 +120,29 @@ struct MainWindow: View {
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(style.sidebar, in: RoundedRectangle(cornerRadius: 15))
         .overlay { RoundedRectangle(cornerRadius: 15).strokeBorder(style.edge) }
+    }
+
+    private var agentActivityButton: some View {
+        let pending = model.agents.pending.count
+        return Button { model.showingAgentActivity = true } label: {
+            HStack(spacing: 7) {
+                Label(L10n.text("Agent Activity", "Agent 活动"), systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.callout.weight(.medium))
+                Spacer()
+                if pending > 0 {
+                    Text(pending.formatted()).font(.caption.weight(.semibold)).monospacedDigit()
+                        .foregroundStyle(style.warning)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(style.warningFill, in: Capsule())
+                        .accessibilityLabel(L10n.text("\(pending) awaiting approval", "\(pending) 条待审批"))
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .modifier(LaneHoverHighlight())
     }
 
     private var sidebarHeader: some View {
