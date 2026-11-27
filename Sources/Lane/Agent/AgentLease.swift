@@ -8,7 +8,6 @@ struct AgentClient: Codable, Identifiable, Sendable {
     let id: UUID
     let name: String
     let tokenDigest: String
-    var canRequest = false
 }
 
 struct AgentShare: Codable, Identifiable, Sendable {

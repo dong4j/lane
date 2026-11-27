@@ -193,6 +193,7 @@ final class LaneModel {
     func importSelected(_ tunnels: [Tunnel], kind: ImportKind) throws -> Int {
         let fresh = try makeImportPreview(tunnels, kind: kind, source: "").tunnels
         try store.add(fresh)
+        agents.libraryChanged()
         if let first = fresh.first { selection = .managed(first.id) }
         query = ""
         return fresh.count

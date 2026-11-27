@@ -196,12 +196,14 @@ struct ManagedOpenSSHTests {
         let second = try access.pair("Claude fixture")
         let helper = try #require(environment["LANE_TEST_MCP_HELPER"] ?? environment["LANE_TEST_HELPER"])
         let config = try #require(access.configuration(for: first.id, executable: helper))
-        #expect(try await config.check() == false)
+        do {
+            _ = try await config.check()
+            Issue.record("Agent access must be disabled before the global switch is enabled")
+        } catch let error as AgentToolError {
+            #expect(error.code == "read_only")
+        }
         try access.setRequestsEnabled(true)
-        try access.setClientRequests(first.id, enabled: true)
-        try access.setClientRequests(second.id, enabled: true)
-        try access.setShared(rule, from: profile, enabled: true)
-        let ruleID = try #require(access.ledger.shares.first?.id)
+        let ruleID = try #require(access.ledger.shares.first { $0.forwardingID == rule.id }?.id)
         #expect(try await config.check() == true)
         if let client = environment["LANE_TEST_MCP_CLIENT"] {
             try await runExternalMCPClient(client, configuration: config, directory: directory)

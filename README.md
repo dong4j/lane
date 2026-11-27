@@ -24,7 +24,7 @@
 - **Manage tunnels from the menu bar.** Connect, disconnect, and copy individual addresses even when the main window is closed.
 - **See where the traffic goes.** Local `-L`, remote `-R`, and dynamic `-D` forwarding have distinct route diagrams, directional animations, and notes.
 - **Find OpenSSH forwards that are already running.** Lane groups discovered listeners by SSH process. External sessions are read-only and server-side listeners are marked unverified when Lane only sees the declaration.
-- **Let Agents request a local forward through MCP.** Pair a client, share a loopback rule, or approve a temporary route. Review who requested it, end a lease, and look up its history in Lane.
+- **Let Agents request a local forward through MCP.** Enable Agent Access and copy a setup for your client. Review who requested a route, end a lease, and look up its history in Lane.
 - **Bring existing profiles.** Preview imports from `~/.ssh/config`, Lane or Porthole backups, and compatible Codinn exports. Lane runs OpenSSH and uses macOS Keychain for saved credentials.
 
 | Menu bar | Agent approval |
@@ -51,9 +51,9 @@ In Lane, choose **New Tunnel**, enter an SSH alias or hostname, and add a forwar
 
 ## Agent MCP
 
-Open **Settings → Agent Access**, create a pairing, and copy one of the **Codex**, **Claude Code**, **Cursor**, or **Generic** recipes. Generic includes both a `mcpServers` JSON entry and the individual `command`, `args`, and optional `env` fields for any local stdio client.
+Open **Settings → Agent**, turn on **Allow Agent access**, and copy the **Codex**, **Claude Code**, or **Generic MCP** setup. Generic includes both a `mcpServers` JSON entry and individual `command` and `args` fields for local stdio clients.
 
-New pairings start read-only. Enable requests for both the app and the client when you want to let that client request a route. Temporary destinations and existing external forwards require approval in Lane. [Setup and tool reference](docs/agent-mcp.md)
+Agent Access is off by default. When enabled, Agents can request eligible saved loopback local forwards; temporary destinations and existing external forwards require approval in Lane. Turning it off ends Agent leases. [Setup and tool reference](docs/agent-mcp.md)
 
 ## Contributing and license
 

@@ -7,22 +7,20 @@ import Testing
 @MainActor
 struct AgentAccessTests {
     @Test
-    func pairingRequiresBothPermissionsAndLeasesArePrivateAndIdempotent() async throws {
+    func oneSwitchControlsRequestsAndLeasesRemainPrivateAndIdempotent() async throws {
         let rig = try Rig()
         defer { rig.clean() }
         let first = try rig.pair("Codex")
         let second = try rig.pair("Claude Code")
-        let rule = try rig.share()
+        let listed = await rig.call(first, .list)
+        #expect(listed.error?.code == "read_only")
+        try rig.access.setRequestsEnabled(true)
+        let enabled = await rig.call(first, .list)
+        let rule = try #require(enabled.rules?.first?.id)
+        #expect(enabled.canRequest == true)
+        #expect(enabled.rules?.count == 1)
         let request = AgentToolArguments(kind: .shared, idempotencyKey: "postgres", purpose: "Inspect local test data", ruleID: rule)
 
-        let listed = await rig.call(first, .list)
-        #expect(listed.canRequest == false)
-        #expect(listed.rules?.map(\.id) == [rule])
-        #expect(await rig.call(first, .request, request).error?.code == "read_only")
-        try rig.access.setRequestsEnabled(true)
-        #expect(await rig.call(first, .request, request).error?.code == "read_only")
-
-        try rig.access.setClientRequests(first.clientID, enabled: true)
         let opened = try #require(await rig.call(first, .request, request).lease)
         #expect(opened.state == .ready)
         #expect(opened.address == "127.0.0.1:3113")
@@ -50,12 +48,45 @@ struct AgentAccessTests {
     }
 
     @Test
+    func copiedClientSetupIsStableAndDisablingAccessEndsLeases() async throws {
+        let rig = try Rig()
+        defer { rig.clean() }
+        let first = try rig.access.configuration(forClientNamed: "Codex", executable: "/Applications/Lane.app/Contents/MacOS/Lane")
+        let again = try rig.access.configuration(forClientNamed: "codex", executable: "/Applications/Lane.app/Contents/MacOS/Lane")
+        let generic = try rig.access.configuration(forClientNamed: "Generic", executable: "/Applications/Lane.app/Contents/MacOS/Lane")
+        #expect(first.credentialFile == again.credentialFile)
+        #expect(first.credentialFile != generic.credentialFile)
+        let credential = try JSONDecoder().decode(AgentCredential.self, from: Data(contentsOf: URL(fileURLWithPath: first.credentialFile)))
+        #expect(await rig.call(credential, .list).error?.code == "read_only")
+
+        try rig.access.setRequestsEnabled(true)
+        let rule = try #require(await rig.call(credential, .list).rules?.first?.id)
+        let request = AgentToolArguments(kind: .shared, idempotencyKey: "disable", purpose: "Test", ruleID: rule)
+        let lease = try #require(await rig.call(credential, .request, request).lease)
+        #expect(lease.state == .ready)
+        try rig.access.setRequestsEnabled(false)
+        #expect(await rig.call(credential, .status, AgentToolArguments(leaseID: lease.id)).error?.code == "read_only")
+        #expect(rig.access.history.first?.reason == .accessDisabled)
+        #expect(rig.manager.runtimes.isEmpty)
+        try rig.access.setRequestsEnabled(true)
+        #expect(await rig.call(credential, .status, AgentToolArguments(leaseID: lease.id)).lease?.state == .ended)
+    }
+
+    @Test
     func temporaryRoutesRequireApprovalAndOnlyValidLoopbackTCPRoutesAreAccepted() async throws {
         let rig = try Rig()
         defer { rig.clean() }
+        let remoteOnly = Tunnel(name: "Preview", host: "preview", forwardings: [
+            Forwarding(kind: .remote, port: 8080, targetHost: "localhost", targetPort: 8080),
+        ])
+        try rig.manager.store.save(remoteOnly)
         let credential = try rig.pair("Test client", canRequest: true)
+        let listing = await rig.call(credential, .list)
+        #expect(listing.rules?.map(\.profileID) == [rig.profile.id])
+        let profileID = try #require(listing.profiles?.first { $0.name == "Preview" }?.id)
+        #expect(profileID == remoteOnly.id)
         var request = AgentToolArguments(kind: .temporary, idempotencyKey: "temp", purpose: "Preview",
-                                        project: "Example", ttlSeconds: 2, profileID: rig.profile.id,
+                                        project: "Example", ttlSeconds: 2, profileID: profileID,
                                         listenHost: "0.0.0.0", listenPort: 4001, targetHost: "localhost", targetPort: 8080)
         #expect(await rig.call(credential, .request, request).error?.code == "invalid_arguments")
         request.listenHost = "127.0.0.1"
@@ -86,7 +117,7 @@ struct AgentAccessTests {
     }
 
     @Test
-    func ruleEditsInvalidateSharingAndReopenedAuditEndsOutstandingLeases() async throws {
+    func ruleEditsRefreshAvailableRulesAndReopenedAuditEndsOutstandingLeases() async throws {
         let rig = try Rig()
         defer { rig.clean() }
         let client = try rig.pair("Test client", canRequest: true)
@@ -100,10 +131,13 @@ struct AgentAccessTests {
         #expect(rig.access.history.first?.id == first.id)
         #expect(rig.access.history.first?.reason == .routeChanged)
         #expect(rig.manager.runtimes.isEmpty)
+        let changedRule = try #require(await rig.call(client, .list).rules?.first?.id)
+        #expect(changedRule != rule)
         try rig.manager.store.save(rig.profile)
-        #expect(await rig.call(client, .list).rules?.isEmpty == true)
+        rig.access.libraryChanged()
 
         rule = try rig.share()
+        #expect(rule != changedRule)
         request.ruleID = rule
         request.idempotencyKey = "after-edit"
         let second = try #require(await rig.call(client, .request, request).lease)
@@ -171,7 +205,7 @@ struct AgentAccessTests {
         let access: AgentAccess
 
         init() throws {
-            let root = URL(fileURLWithPath: "/tmp", isDirectory: true).appending(path: "pl-test-\(UUID())")
+            let root = URL(fileURLWithPath: "/tmp", isDirectory: true).appending(path: "lane-test-\(UUID())")
             files = AgentFiles(directory: root, socketPath: root.appending(path: "mcp.sock").path)
             profile = Tunnel(name: "Development", host: "dev", forwardings: [
                 Forwarding(bindAddress: "127.0.0.1", port: 3113, targetHost: "localhost", targetPort: 3113),
@@ -185,14 +219,12 @@ struct AgentAccessTests {
             let client = try access.pair(name)
             if canRequest {
                 try access.setRequestsEnabled(true)
-                try access.setClientRequests(client.id, enabled: true)
             }
             return try JSONDecoder().decode(AgentCredential.self, from: Data(contentsOf: files.credentialURL(client.id)))
         }
 
         func share() throws -> UUID {
-            try access.setShared(profile.forwardings[0], from: profile, enabled: true)
-            return try #require(access.ledger.shares.first?.id)
+            return try #require(access.ledger.shares.first { $0.forwardingID == profile.forwardings[0].id }?.id)
         }
 
         func call(_ credential: AgentCredential, _ tool: AgentTool, _ arguments: AgentToolArguments = .init()) async -> AgentToolResult {

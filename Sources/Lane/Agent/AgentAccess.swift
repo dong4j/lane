@@ -47,6 +47,7 @@ final class AgentAccess {
     /// No TCP endpoint is opened. The stdio helper talks to this app instance over a private socket.
     func start() {
         guard let files, ipc == nil else { return }
+        if ledger.requestsEnabled { libraryChanged() }
         let server = AgentIPC(socketPath: files.socketPath)
         do {
             try server.start { [weak self] call in
@@ -81,7 +82,7 @@ final class AgentAccess {
         collectUnusedConnections()
     }
 
-    /// Pairings start read-only. The generated setup only points at the private credential file.
+    /// The generated setup points at a private credential file, not the token itself.
     func pair(_ input: String) throws -> AgentClient {
         guard let files else { throw AgentToolError.unavailable }
         let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -108,19 +109,29 @@ final class AgentAccess {
         return AgentMCPConfiguration(executable: executable, credentialFile: file.path)
     }
 
+    /// Reuse a valid local identity so copied recipes and audit records remain stable.
+    func configuration(forClientNamed name: String, executable: String? = Bundle.main.executablePath) throws -> AgentMCPConfiguration {
+        guard available, let files, let executable else { throw AgentToolError.unavailable }
+        for client in ledger.clients.reversed() where client.name.caseInsensitiveCompare(name) == .orderedSame {
+            let file = files.credentialURL(client.id)
+            guard let data = try? Data(contentsOf: file),
+                  let credential = try? JSONDecoder().decode(AgentCredential.self, from: data),
+                  credential.clientID == client.id, credential.socketPath == files.socketPath,
+                  client.tokenDigest == agentDigest(Data(credential.token.utf8)) else { continue }
+            return AgentMCPConfiguration(executable: executable, credentialFile: file.path)
+        }
+        let client = try pair(name)
+        return AgentMCPConfiguration(executable: executable, credentialFile: files.credentialURL(client.id).path)
+    }
+
     func setRequestsEnabled(_ enabled: Bool) throws {
         var next = ledger
         next.requestsEnabled = enabled
-        if !enabled { endLeases(in: &next, reason: .accessDisabled) { _ in true } }
-        try commit(next)
-        collectUnusedConnections()
-    }
-
-    func setClientRequests(_ id: UUID, enabled: Bool) throws {
-        guard let index = ledger.clients.firstIndex(where: { $0.id == id }) else { throw AgentToolError.notPaired }
-        var next = ledger
-        next.clients[index].canRequest = enabled
-        if !enabled { endLeases(in: &next, reason: .accessDisabled) { $0.clientID == id } }
+        if enabled {
+            next.shares = availableShares(from: next.shares)
+        } else {
+            endLeases(in: &next, reason: .accessDisabled) { _ in true }
+        }
         try commit(next)
         collectUnusedConnections()
     }
@@ -134,43 +145,15 @@ final class AgentAccess {
         if let file = files?.credentialURL(id) { try? FileManager.default.removeItem(at: file) }
     }
 
-    func canShare(_ rule: Forwarding, from profile: Tunnel) -> Bool {
-        AgentPreparedRoute(profile: profile, forwarding: rule) != nil
-    }
-
-    func isShared(_ rule: Forwarding, from profile: Tunnel) -> Bool {
-        guard let share = ledger.shares.first(where: { $0.profileID == profile.id && $0.forwardingID == rule.id }) else {
-            return false
-        }
-        return preparedShared(share) != nil
-    }
-
-    /// Grants are scoped to the current effective route. Editing an address requires sharing it again.
-    func setShared(_ rule: Forwarding, from profile: Tunnel, enabled: Bool) throws {
-        guard let current = manager.store.tunnel(profile.id), let selected = current.forwardings.first(where: { $0.id == rule.id }),
-              let route = AgentPreparedRoute(profile: current, forwarding: selected) else { throw AgentToolError.routeChanged }
-        var next = ledger
-        let replaced = next.shares.filter { $0.profileID == profile.id && $0.forwardingID == rule.id }
-        next.shares.removeAll { $0.profileID == profile.id && $0.forwardingID == rule.id }
-        if enabled {
-            next.shares.append(AgentShare(id: UUID(), profileID: profile.id, forwardingID: rule.id, fingerprint: route.key.fingerprint))
-        }
-        endLeases(in: &next, reason: .routeChanged) { lease in
-            guard case .shared(let id) = lease.input.target else { return false }
-            return replaced.contains { $0.id == id }
-        }
-        try commit(next)
-        collectUnusedConnections()
-    }
-
-    /// Revoke requests whose approved forwarding or SSH profile no longer matches the saved setup.
+    /// Keep eligible local rules in sync and end leases when their saved route changes.
     func libraryChanged() {
         let invalid = ledger.leases.filter { lease in
             guard lease.state.isOpen, let key = lease.connectionKey else { return false }
             return prepared(lease.input.target)?.key != key
         }
-        let validShares = ledger.shares.filter { preparedShared($0) != nil }
-        guard !invalid.isEmpty || validShares.count != ledger.shares.count else { return }
+        let validShares = ledger.requestsEnabled ? availableShares(from: ledger.shares) :
+            ledger.shares.filter { preparedShared($0) != nil }
+        guard !invalid.isEmpty || validShares.map(\.id) != ledger.shares.map(\.id) else { return }
         let ids = Set(invalid.map(\.id))
         var next = ledger
         next.shares = validShares
@@ -179,17 +162,33 @@ final class AgentAccess {
         collectUnusedConnections()
     }
 
+    /// Enabling Agent access makes saved, valid loopback local forwards discoverable.
+    private func availableShares(from existing: [AgentShare]) -> [AgentShare] {
+        var shares = existing.filter { preparedShared($0) != nil }
+        for profile in manager.store.tunnels {
+            for rule in profile.forwardings {
+                guard let route = AgentPreparedRoute(profile: profile, forwarding: rule),
+                      !shares.contains(where: { $0.profileID == profile.id && $0.forwardingID == rule.id }) else { continue }
+                shares.append(AgentShare(id: UUID(), profileID: profile.id, forwardingID: rule.id,
+                                         fingerprint: route.key.fingerprint))
+            }
+        }
+        return shares
+    }
+
     /// Only the paired client that owns a lease can query or release it.
     func handle(_ call: AgentToolCall) async -> AgentToolResult {
         do {
             let client = try authenticate(call.credential)
+            guard ledger.requestsEnabled else { throw AgentToolError.readOnly }
             try reconcile()
             switch call.tool {
             case .list:
                 let rules = ledger.shares.compactMap { share in
                     preparedShared(share).map { AgentToolResult.Rule(share: share, route: $0.route) }
                 }
-                return AgentToolResult(rules: rules, canRequest: ledger.requestsEnabled && client.canRequest)
+                let profiles = manager.store.tunnels.map(AgentToolResult.Profile.init)
+                return AgentToolResult(rules: rules, profiles: profiles, canRequest: true)
             case .request:
                 return AgentToolResult(lease: AgentToolResult.Lease(try await request(call.arguments, credential: call.credential)))
             case .status, .release:
@@ -266,7 +265,7 @@ final class AgentAccess {
             }
             return lease(existing.id) ?? existing
         }
-        guard ledger.requestsEnabled, client.canRequest else { throw AgentToolError.readOnly }
+        guard ledger.requestsEnabled else { throw AgentToolError.readOnly }
 
         let managed: AgentPreparedRoute?
         let external: AgentExternalEvidence?
@@ -275,7 +274,7 @@ final class AgentAccess {
             external = try await externalEvidence(at: address)
             let current = try authenticate(credential)
             if let existing = try previousRequest(current.id, key: key, input: input) { return existing }
-            guard ledger.requestsEnabled, current.canRequest else { throw AgentToolError.readOnly }
+            guard ledger.requestsEnabled else { throw AgentToolError.readOnly }
         } else {
             managed = prepared(input.target)
             external = nil

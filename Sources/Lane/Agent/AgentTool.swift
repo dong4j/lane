@@ -18,7 +18,7 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
         }
         switch self {
         case .list:
-            description = "List local SSH forwarding rules explicitly shared in Lane and check whether this pairing can request leases."
+            description = "List available loopback forwarding rules and saved SSH profiles for temporary requests."
             properties = [:]
             required = []
         case .request:
@@ -35,7 +35,7 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
                 "ttl_seconds": ["type": "integer", "minimum": 1, "maximum": 3_600, "default": 900,
                                 "description": "Lease duration from first readiness."],
                 "rule_id": string("Required for shared. Use an ID from lane_list."),
-                "profile_id": string("Required for temporary. Use a saved SSH profile ID copied in Lane Settings."),
+                "profile_id": string("Required for temporary. Use an ID from profiles in lane_list."),
                 "listen_host": ["type": "string", "enum": ["127.0.0.1", "::1"], "default": "127.0.0.1"],
                 "listen_port": port("Required for temporary. Port to listen on this Mac."),
                 "target_host": string("Required for temporary. TCP host as seen by the SSH server."),
@@ -147,8 +147,8 @@ struct AgentToolError: Codable, LocalizedError, Sendable {
     var errorDescription: String? {
         let chinese = switch code {
         case Self.invalidArguments.code: "请检查输入字段。"
-        case Self.notPaired.code: "请在「设置 → Agent 接入」重新配对该客户端。"
-        case Self.readOnly.code: "请在「设置 → Agent 接入」开启该客户端的申请权限。"
+        case Self.notPaired.code: "请在「设置 → Agent 接入」重新复制并更新接入配置。"
+        case Self.readOnly.code: "请在「设置 → Agent 接入」开启 Agent 接入。"
         case Self.notFound.code: "此客户端没有对应编号的申请。"
         case Self.routeChanged.code: "请在 Lane 中检查共享规则或已保存的 SSH 配置。"
         case Self.externalGone.code: "无法核实该地址存在外部 SSH 本地转发。"
@@ -161,8 +161,8 @@ struct AgentToolError: Codable, LocalizedError, Sendable {
     }
 
     static let invalidArguments = Self(code: "invalid_arguments", message: "Check the fields described by this tool.")
-    static let notPaired = Self(code: "not_paired", message: "Pair this client again in Lane Settings → Agent Access.")
-    static let readOnly = Self(code: "read_only", message: "Allow requests for this pairing in Lane Settings → Agent Access.")
+    static let notPaired = Self(code: "not_paired", message: "Copy a new configuration in Lane Settings → Agent.")
+    static let readOnly = Self(code: "read_only", message: "Enable Agent Access in Lane Settings.")
     static let notFound = Self(code: "not_found", message: "This pairing has no lease with that ID.")
     static let routeChanged = Self(code: "route_unavailable", message: "Check the shared rule or saved SSH profile in Lane.")
     static let externalGone = Self(code: "external_unverified", message: "Lane could not verify a live external loopback -L listener at that address.")
@@ -183,7 +183,7 @@ struct AgentToolCall: Codable, Sendable {
     let arguments: AgentToolArguments
 }
 
-/// Clients receive only their lease, with an address available in the ready state.
+/// Returns route choices or a client-owned lease whose address is available once ready.
 struct AgentToolResult: Codable, Sendable {
     struct Rule: Codable, Sendable {
         let id: UUID
@@ -201,6 +201,21 @@ struct AgentToolResult: Codable, Sendable {
         }
 
         enum CodingKeys: String, CodingKey { case id, profileID = "profile_id", name, sshHost = "ssh_host", destination }
+    }
+
+    /// A saved SSH profile can be used for an approved temporary route even when it has no shared rules.
+    struct Profile: Codable, Sendable {
+        let id: UUID
+        let name: String
+        let sshHost: String
+
+        init(_ tunnel: Tunnel) {
+            id = tunnel.id
+            name = tunnel.displayName
+            sshHost = tunnel.hostNotation
+        }
+
+        enum CodingKeys: String, CodingKey { case id, name, sshHost = "ssh_host" }
     }
 
     struct Lease: Codable, Sendable {
@@ -224,11 +239,12 @@ struct AgentToolResult: Codable, Sendable {
     }
 
     var rules: [Rule]?
+    var profiles: [Profile]?
     var canRequest: Bool?
     var lease: Lease?
     var error: AgentToolError?
 
-    enum CodingKeys: String, CodingKey { case rules, canRequest = "can_request", lease, error }
+    enum CodingKeys: String, CodingKey { case rules, profiles, canRequest = "can_request", lease, error }
 
     static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
