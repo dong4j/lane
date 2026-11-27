@@ -157,11 +157,12 @@ struct AgentActivity: View {
                     CopyAction(model: model, value: lease.id.uuidString, key: "agent-id-\(lease.id)",
                                title: L10n.text("Copy Lease ID", "复制申请编号"))
                 }
-                .padding(.top, 10)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
             } label: {
                 leaseTitle(lease)
             }
-            .padding(12)
+            .disclosureGroupStyle(LaneDisclosureStyle(minHeight: 52, inset: 12))
             .background(style.surface, in: RoundedRectangle(cornerRadius: 10))
             .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(style.edge).allowsHitTesting(false) }
         }

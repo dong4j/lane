@@ -18,7 +18,7 @@ Choose **Save and Connect**, or save and connect later from the menu. Lane opens
 
 ## Use the menu bar
 
-The menu bar can connect and disconnect saved profiles, copy individual addresses, and reopen the main window. Expand a profile with multiple entrances to choose which one to copy. The command for a failed connection opens the affected profile in the main window.
+The menu bar can connect and disconnect saved profiles, copy individual addresses, and reopen the main window. Click the row for a profile or discovered session with multiple entries to expand or collapse it. The chevron is at the right edge. Right-click a discovered session with multiple entries to open its details in the main window. For a failed connection, choose **View** to see its details.
 
 **Local discovery** shows SSH processes owned by the current macOS user when Lane can observe a relevant forwarding. Lane groups listeners by process and correlates them with the SSH arguments when available. If a remote forward has no locally verifiable listener, the requested address is shown as unverified. Use the original tool or terminal to change or stop a discovered session.
 

@@ -236,23 +236,15 @@ struct TunnelEditor: View {
 
     private func advancedFields(_ rule: Binding<RuleDraft>) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            Button {
-                advanced.toggle()
-            } label: {
+            LaneDisclosureRow(isExpanded: $advanced, minHeight: 25) {
                 HStack {
-                    Image(systemName: advanced ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(style.secondary)
                     Text(L10n.text("Advanced options", "高级选项")).fontWeight(.semibold)
                     Spacer()
                     Text(useConfig ? L10n.text("Uses existing SSH configuration", "使用现有 SSH 配置") :
                             L10n.text("Direct configuration", "独立 SSH 配置")).foregroundStyle(style.secondary)
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .font(.system(size: 12))
-            .frame(height: 25)
-            .accessibilityValue(advanced ? L10n.text("Expanded", "已展开") : L10n.text("Collapsed", "已收起"))
             if advanced {
                 HStack(spacing: 12) {
                     input(L10n.text("SSH Port", "SSH 端口"), text: $port, placeholder: "22", field: .sshPort, mono: true)

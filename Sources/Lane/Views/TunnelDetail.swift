@@ -6,7 +6,6 @@ struct TunnelDetail: View {
     let tunnel: Tunnel
     let model: LaneModel
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selectedRuleID: UUID?
     @State private var showLogs = false
     @State private var confirmDelete = false
@@ -230,21 +229,10 @@ struct TunnelDetail: View {
                     .foregroundStyle(entry.level == .error ? style.warning : style.secondary)
                 }
             }
-            Button {
-                withAnimation(reduceMotion ? nil : LaneMotion.disclosure) { showLogs.toggle() }
-            } label: {
-                HStack(spacing: 9) {
-                    Label(L10n.text("Diagnostics & Logs", "诊断与日志"), systemImage: "waveform.path")
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
-                        .rotationEffect(.degrees(showLogs ? 90 : 0))
-                    Spacer()
-                }
-                .frame(height: 31)
-                .contentShape(Rectangle())
+            LaneDisclosureRow(isExpanded: $showLogs, minHeight: 31) {
+                Label(L10n.text("Diagnostics & Logs", "诊断与日志"), systemImage: "waveform.path")
             }
-            .buttonStyle(.plain)
             .font(.system(size: 12, weight: .semibold)).foregroundStyle(style.secondary)
-            .accessibilityValue(showLogs ? L10n.text("Expanded", "已展开") : L10n.text("Collapsed", "已收起"))
         }
     }
 

@@ -277,35 +277,45 @@ struct LaneMenuBar: View {
         let icon = current.isFailure ? "exclamationmark.triangle" :
             kind == .local ? "square.3.layers.3d" : kind == .remote ? "macwindow" : kind.routeIcon
         let detail = current.displayLabel + (current.isConnected || rules.count == 1 && kind != .local ? " · \(subtitle)" : "")
+        let expandable = current.isConnected && rules.count > 1
+        let expanded = expansion(of: tunnel.id, in: $expandedManaged)
+        let title = rowLabel(tunnel.displayName, detail: detail, icon: icon,
+                             ink: current.isFailure ? style.warning : style.ink(kind),
+                             fill: current.isFailure ? style.warningFill : style.tile(kind),
+                             status: current.isFailure ? style.warning : current.isConnected ? style.positive : style.secondary)
         return VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                rowLabel(tunnel.displayName, detail: detail, icon: icon,
-                         ink: current.isFailure ? style.warning : style.ink(kind),
-                         fill: current.isFailure ? style.warningFill : style.tile(kind),
-                         status: current.isFailure ? style.warning : current.isConnected ? style.positive : style.secondary)
-                if current.isConnected, rules.count == 1, let rule = rules.first, status?.forwardStatus[rule.id] == .active {
-                    CopyAction(model: model, value: rule.clientAddress, key: rule.id.uuidString, title: rule.copyTitle, iconOnly: true)
+            ZStack {
+                if expandable {
+                    // Behind the controls, this button also receives clicks in the gaps around Disconnect.
+                    LaneDisclosureButton(isExpanded: expanded) { Color.clear }
+                        .accessibilityLabel("\(tunnel.displayName), \(detail)")
                 }
-                Button(current.isFailure ? L10n.text("View", "查看") : current.isActive ?
-                       L10n.text("Disconnect", "断开") : L10n.text("Connect", "连接")) {
-                    if current.isFailure {
-                        model.selection = .managed(tunnel.id)
-                        showMainWindow()
-                    } else {
-                        model.manager.toggle(tunnel.id)
+                HStack(spacing: 6) {
+                    title
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(expandable)
+                    if current.isConnected, rules.count == 1, let rule = rules.first, status?.forwardStatus[rule.id] == .active {
+                        CopyAction(model: model, value: rule.clientAddress, key: rule.id.uuidString, title: rule.copyTitle, iconOnly: true)
+                    }
+                    Button(current.isFailure ? L10n.text("View", "查看") : current.isActive ?
+                           L10n.text("Disconnect", "断开") : L10n.text("Connect", "连接")) {
+                        if current.isFailure {
+                            model.selection = .managed(tunnel.id)
+                            showMainWindow()
+                        } else {
+                            model.manager.toggle(tunnel.id)
+                        }
+                    }
+                    .buttonStyle(LaneButtonStyle())
+                    .disabled(current == .disconnecting)
+                    if expandable {
+                        LaneDisclosureChevron(expanded: expanded.wrappedValue)
                     }
                 }
-                .buttonStyle(LaneButtonStyle())
-                .disabled(current == .disconnecting)
-                if rules.count > 1, current.isConnected {
-                    expandButton(expandedManaged.contains(tunnel.id)) {
-                        if !expandedManaged.insert(tunnel.id).inserted { expandedManaged.remove(tunnel.id) }
-                    }
-                }
+                .padding(.horizontal, 7)
             }
-            .padding(.horizontal, 7)
-            .frame(minHeight: 44)
-            if current.isConnected, rules.count > 1, expandedManaged.contains(tunnel.id) {
+            .frame(height: 44)
+            if expandable, expanded.wrappedValue {
                 expandedEntries {
                     ForEach(rules) { rule in
                         entry(rule.kind == .remote ? L10n.text("Server", "服务器") : rule.displayName,
@@ -321,34 +331,38 @@ struct LaneMenuBar: View {
         let listeners = session.rules.filter { $0.listener != nil }
         let detail = listeners.isEmpty ? L10n.text("Remote unverified", "远端未核实")
             : L10n.text("Listening · \(listeners.count) entries", "本机监听 · \(listeners.count) 个入口")
-        return VStack(spacing: 3) {
-            HStack(spacing: 6) {
-                Button {
-                    model.selection = .external(session.id)
-                    showMainWindow()
-                } label: {
-                    rowLabel(session.host ?? "OpenSSH", detail: detail, icon: "terminal",
+        let title = rowLabel(session.host ?? "OpenSSH", detail: detail, icon: "terminal",
                              ink: style.ink(.local), fill: style.tile(.local),
                              status: listeners.isEmpty ? style.warning : style.positive)
-                        .padding(.horizontal, 7)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .modifier(LaneHoverHighlight())
-                Group {
-                    if session.rules.count == 1, let rule = listeners.first, let address = rule.copyAddress {
+        let expanded = expansion(of: session.id, in: $expandedExternal)
+        let openDetails = {
+            model.selection = .external(session.id)
+            showMainWindow()
+        }
+        return VStack(spacing: 3) {
+            if session.rules.count > 1 {
+                LaneDisclosureRow(isExpanded: expanded, minHeight: 44, inset: 7) { title }
+                    .contextMenu {
+                        Button(L10n.text("Open in Main Window", "在主窗口中打开"), action: openDetails)
+                    }
+            } else {
+                HStack(spacing: 6) {
+                    Button(action: openDetails) {
+                        title
+                            .padding(.horizontal, 7)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(LaneHoverHighlight())
+                    if let rule = listeners.first, let address = rule.copyAddress {
                         CopyAction(model: model, value: address, key: "external-\(session.id)-\(rule.id)",
                                    title: L10n.text("Copy local address", "复制本机地址"), iconOnly: true)
-                    } else if session.rules.count > 1 {
-                        expandButton(expandedExternal.contains(session.id)) {
-                            if !expandedExternal.insert(session.id).inserted { expandedExternal.remove(session.id) }
-                        }
+                            .padding(.trailing, 7)
                     }
                 }
-                .padding(.trailing, 7)
             }
-            if expandedExternal.contains(session.id), session.rules.count > 1 {
+            if session.rules.count > 1, expanded.wrappedValue {
                 expandedEntries {
                     ForEach(session.rules) { rule in
                         if let value = rule.copyAddress {
@@ -405,19 +419,15 @@ struct LaneMenuBar: View {
         .padding(.leading, 11).padding(.trailing, 5)
     }
 
-    private func expandButton(_ expanded: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : LaneMotion.disclosure) { action() }
-        } label: {
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold)).foregroundStyle(style.secondary)
-                .rotationEffect(.degrees(expanded ? 180 : 0))
-                .frame(width: 27, height: 29)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .modifier(LaneHoverHighlight())
-        .accessibilityLabel(expanded ? L10n.text("Collapse entries", "收起入口") : L10n.text("Expand entries", "展开入口"))
+    /// Each menu group keeps its expansion when another row is opened or refreshed.
+    private func expansion<ID: Hashable>(of id: ID, in rows: Binding<Set<ID>>) -> Binding<Bool> {
+        Binding(
+            get: { rows.wrappedValue.contains(id) },
+            set: { expanded in
+                if expanded { rows.wrappedValue.insert(id) }
+                else { rows.wrappedValue.remove(id) }
+            }
+        )
     }
 
     private func tile(icon: String, color: Color, fill: Color) -> some View {

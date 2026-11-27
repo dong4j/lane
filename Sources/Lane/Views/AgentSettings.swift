@@ -61,7 +61,10 @@ struct AgentSettings: View {
                         LabeledContent("env", value: L10n.text("Leave empty", "留空"))
                     }
                     .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
                 }
+                .disclosureGroupStyle(LaneDisclosureStyle(minHeight: 38, inset: 10))
+                .listRowInsets(EdgeInsets())
                 .onChange(of: manualFields) { _, expanded in
                     if expanded, enabled { prepareGeneric() }
                 }
