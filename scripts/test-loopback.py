@@ -20,7 +20,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"portlane-fixture")
+        self.wfile.write(b"lane-fixture")
 
     def log_message(self, *_args):
         return
@@ -62,7 +62,7 @@ def allocate_ports():
 def run_fixture(project):
     """Isolate keys, host trust and listeners from the user's SSH configuration."""
     with ExitStack() as stack:
-        directory = Path(stack.enter_context(TemporaryDirectory(prefix="portlane-test-", dir="/tmp")))
+        directory = Path(stack.enter_context(TemporaryDirectory(prefix="lane-test-", dir="/tmp")))
         ssh_port, local_port, remote_port, socks_port, first_external, second_external = allocate_ports()
         http = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
         threading.Thread(target=http.serve_forever, daemon=True).start()
@@ -104,8 +104,8 @@ def run_fixture(project):
             "externalPorts": [first_external, second_external],
         }))
         bin_path = subprocess.check_output(["swift", "build", "--show-bin-path"], cwd=project, text=True).strip()
-        environment = dict(os.environ, PORTLANE_SSH_FIXTURE=str(directory),
-                           PORTLANE_TEST_HELPER=str(Path(bin_path) / "Lane"))
+        environment = dict(os.environ, LANE_SSH_FIXTURE=str(directory),
+                           LANE_TEST_HELPER=str(Path(bin_path) / "Lane"))
         return subprocess.run(["swift", "test"], cwd=project, env=environment, timeout=300).returncode
 
 

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>site.dong4j.portlane</string>
+    <string>site.dong4j.lane</string>
     <key>CFBundleExecutable</key>
     <string>Lane</string>
     <key>CFBundleDisplayName</key>

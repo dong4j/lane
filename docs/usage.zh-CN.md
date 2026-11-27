@@ -35,9 +35,9 @@
 3. 第一次遇到 SSH 主机指纹时，从可信渠道核对后再接受。已有指纹变化时，先联系服务器管理员核实。
 4. Lane 显示「已连接」而客户端报错时，从路径图标出的机器验证目标服务是否可达。
 
-## 本地数据和旧开发版
+## 本地数据
 
-Lane 沿用 Portlane 开发版的应用标识。隧道配置保存在 `~/Library/Application Support/Portlane/tunnels.json`，原有偏好、钥匙串引用和 Agent 配对沿用同一标识。如果使用过旧开发版或移动了应用位置，请重新复制 MCP 接入配置，更新客户端里的 `Lane.app` 路径。
+隧道配置保存在 `~/Library/Application Support/Lane/tunnels.json`。移动 `Lane.app` 后，请重新复制 MCP 接入配置，让客户端使用新的应用路径。
 
 想用示例配置体验时，先退出正在运行的应用，再带 `--demo` 启动。
 

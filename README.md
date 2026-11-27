@@ -42,9 +42,10 @@ The source build uses Swift 6. Run these commands on your Mac.
 ```sh
 git clone https://github.com/dong4j/lane.git
 cd lane
-./scripts/build-app.sh release
-open .build/Lane.app
+make run
 ```
+
+Use `make build` to package the Debug app at `.build/Lane.app`. Quit the running app first when you want `make run` to launch a fresh build.
 
 In Lane, choose **New Tunnel**, enter an SSH alias or hostname, and add a forwarding rule. For example, with local forwarding, listen on `127.0.0.1:15432` and set `db.internal:5432` as the destination as seen from the SSH host. Connect and copy the local address into your database client. See the [user guide](docs/usage.md) for remote forwarding, SOCKS5, and troubleshooting.
 

@@ -4,17 +4,16 @@
 
 一款原生 macOS SSH 隧道工具。打开菜单栏，连接开发环境，或从本机已有的 OpenSSH 转发复制入口。新增规则和排查问题时，再打开主窗口。
 
-以下原型使用演示数据，保留开发阶段的 Portlane 命名。当前应用图见[项目首页](../README.zh-CN.md)。
+以下原型使用演示数据。当前应用图见[项目首页](../README.zh-CN.md)。
 
-![Portlane UI v2。开发环境详情显示 PostgreSQL 的转发路径，规则列表中可以复制任一个本机地址。](design/previews/v2/main-light.png)
+![Lane UI v2。开发环境详情显示 PostgreSQL 的转发路径，规则列表中可以复制任一个本机地址。](design/previews/v2/main-light.png)
 
 ## 本机运行
 
 需要 macOS 14 或更新版本及 Swift 6 工具链。在项目根目录执行以下命令。
 
 ```sh
-./scripts/build-app.sh
-open .build/Lane.app
+make run
 ```
 
 退出当前 Lane 后，带 `--demo` 启动可查看 v2 示例。演示配置、偏好和连接状态只保存在进程内。同一 macOS 用户重复打开 Lane 会唤回已经运行的主窗口。
@@ -25,7 +24,7 @@ swift test
 ./scripts/test-loopback.py
 ```
 
-回环测试需要 Python 3，使用临时密钥和本机 OpenSSH 服务。正式配置保存在 `~/Library/Application Support/Portlane/tunnels.json`。开发时可通过 `PORTLANE_DATA_FILE` 指定独立的配置文件。界面仍以 [Portlane.pen](design/Portlane.pen) 为视觉基准。
+回环测试需要 Python 3，使用临时密钥和本机 OpenSSH 服务。正式配置保存在 `~/Library/Application Support/Lane/tunnels.json`。开发时可通过 `LANE_DATA_FILE` 指定独立的配置文件。界面仍以 [Lane.pen](design/Lane.pen) 为视觉基准。
 
 ## 设置
 
@@ -47,7 +46,7 @@ swift test
 | 适合复用哪些代码，首版如何验收 | [实现路线与验收清单](03-implementation-plan.md) |
 | 以哪套画板、尺寸和动效为实现基准 | [UI v2 设计交接](04-ui-v2.md) · [三种转发动效](design/previews/v2/route-motion.gif) |
 | 在同一张表单里点选三种转发方式 | [可点击预览](04-ui-v2.md#动效与状态) |
-| 调整布局、间距、文字或配色 | [可编辑的 Pen 原型](design/Portlane.pen) |
+| 调整布局、间距、文字或配色 | [可编辑的 Pen 原型](design/Lane.pen) |
 
 ## v1 存档
 

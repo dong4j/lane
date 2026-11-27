@@ -35,9 +35,9 @@ Under **Settings → Data**, preview aliases with explicit forwarding rules from
 3. For a first-time SSH host key, verify the fingerprint against a trusted source before accepting it. For a changed fingerprint, check with the server administrator.
 4. If Lane shows **Connected** and the application reports an error, test that the destination is reachable from the machine shown on the route diagram.
 
-## Local data and the earlier app name
+## Local data
 
-Lane keeps the existing app identity from its Portlane development builds. Saved tunnels are under `~/Library/Application Support/Portlane/tunnels.json`. Previously saved settings, Keychain references, and Agent pairings use the same identity. If you were using a pre-release build or moved the app, copy the MCP recipe again so your client uses the path to `Lane.app`.
+Saved tunnels are under `~/Library/Application Support/Lane/tunnels.json`. When you move `Lane.app`, copy the MCP recipe again so your client uses the new app path.
 
 Try the UI with sample data by quitting the running app and starting the bundled app with `--demo`.
 

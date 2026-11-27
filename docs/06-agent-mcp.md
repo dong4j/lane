@@ -75,8 +75,8 @@ Lane 可以为本机 Agent 建立 SSH 本地转发。Agent 申请有期限的使
 ## 审计和排障
 
 - 从主窗口或菜单栏打开「Agent 活动」。可审批、拒绝、复制已就绪地址、人工结束。历史支持按客户端、项目、地址或申请编号查找，并可展开查看申请、授权、连接、复用、重连和结束原因。
-- 记录保存在 `~/Library/Application Support/Portlane/Agent/activity.json`。SSH 凭据仍由 macOS 钥匙串及 OpenSSH 管理。Agent 审计只写管理动作和路径元数据。配对密钥、业务流量和 OpenSSH 运行日志分开放置。
+- 记录保存在 `~/Library/Application Support/Lane/Agent/activity.json`。SSH 凭据仍由 macOS 钥匙串及 OpenSSH 管理。Agent 审计只写管理动作和路径元数据。配对密钥、业务流量和 OpenSSH 运行日志分开放置。
 - 正常退出会结束当前申请并关闭 Lane 管理的 SSH。重启可查询历史，上一进程留下的未结申请会标为已结束。异常退出后若仍观察到 SSH 监听，可以在「本机发现」核查。
-- `read_only` 表示申请权限未开启。`not_paired` 表示当前配对文件缺失、无效或已撤销。`portlane_unavailable` 表示需要在本机启动 Lane。`route_unavailable` 时在设置里核对当前共享规则或 SSH 配置。`external_unverified` 时在「本机发现」核对监听和转发参数。
+- `read_only` 表示申请权限未开启。`not_paired` 表示当前配对文件缺失、无效或已撤销。`lane_unavailable` 表示需要在本机启动 Lane。`route_unavailable` 时在设置里核对当前共享规则或 SSH 配置。`external_unverified` 时在「本机发现」核对监听和转发参数。
 
 stdio 支持 `2026-07-28` 的 `server/discover`，以及从 `2024-11-05` 到 `2025-11-25` 的 `initialize` 握手。客户端接入格式可查阅 [MCP stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)、[Codex MCP](https://developers.openai.com/codex/mcp)、[Claude Code MCP](https://code.claude.com/docs/en/mcp) 和 [Cursor MCP](https://cursor.com/docs/context/mcp)。

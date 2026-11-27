@@ -42,9 +42,10 @@ Lane 需要 **macOS 14 或更高版本**。Apple 芯片用户可登录 GitHub，
 ```sh
 git clone https://github.com/dong4j/lane.git
 cd lane
-./scripts/build-app.sh release
-open .build/Lane.app
+make run
 ```
+
+`make build` 可单独打包调试版到 `.build/Lane.app`。需要用 `make run` 启动刚构建的版本时，先退出当前运行的 Lane。
 
 打开 Lane，选择「新建隧道」，填写 SSH 别名或主机名并添加转发。比如用本地转发在 `127.0.0.1:15432` 监听，将目标设为 SSH 主机可访问的 `db.internal:5432`。连接成功后，把本机地址复制到数据库客户端。远程转发、SOCKS5 和排障见[使用指南](docs/usage.zh-CN.md)。
 

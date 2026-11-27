@@ -72,13 +72,13 @@ Approval can take up to five minutes, and initial connection up to two minutes. 
 
 Open **Agent Activity** from the window or menu bar to approve, deny, copy a ready address, or end a lease. History is searchable by pairing, project, address, and request ID. It includes approval, connection, reuse, and end events.
 
-The audit is local under `~/Library/Application Support/Portlane/Agent/activity.json`. It contains route metadata and the client's stated purpose. Pairing credentials, SSH credentials, and forwarded traffic are stored or handled separately. Lane ends outstanding leases on quit and marks any left from an interrupted run as ended after restart.
+The audit is local under `~/Library/Application Support/Lane/Agent/activity.json`. It contains route metadata and the client's stated purpose. Pairing credentials, SSH credentials, and forwarded traffic are stored or handled separately. Lane ends outstanding leases on quit and marks any left from an interrupted run as ended after restart.
 
 | Response | What to check |
 | --- | --- |
 | `not_paired` | Verify the pairing is valid and that the configured file still exists. |
 | `read_only` | Check the app-wide and per-client request permissions. |
-| `portlane_unavailable` | Open Lane on this Mac, then retry. |
+| `lane_unavailable` | Open Lane on this Mac, then retry. |
 | `route_unavailable` | Verify the shared rule and the saved SSH profile. |
 | `external_unverified` | Check the listener and arguments under Local discovery. |
 

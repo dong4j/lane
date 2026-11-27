@@ -34,7 +34,7 @@ jobs:
 
       - name: Run Swift and loopback SSH tests
         run: |
-          export PORTLANE_TEST_MCP_HELPER="$PWD/.build/Lane.app/Contents/MacOS/Lane"
+          export LANE_TEST_MCP_HELPER="$PWD/.build/Lane.app/Contents/MacOS/Lane"
           ./scripts/test-loopback.py
 
       - name: Build and verify Release app

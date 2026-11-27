@@ -5,11 +5,11 @@ import PackageDescription
 let package = Package(
     name: "Lane",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "Lane", targets: ["Portlane"])],
+    products: [.executable(name: "Lane", targets: ["Lane"])],
     targets: [
-        .target(name: "PortlaneCore"),
-        .executableTarget(name: "Portlane", dependencies: ["PortlaneCore"]),
-        .testTarget(name: "PortlaneCoreTests", dependencies: ["PortlaneCore", "Portlane"])
+        .target(name: "LaneCore"),
+        .executableTarget(name: "Lane", dependencies: ["LaneCore"]),
+        .testTarget(name: "LaneCoreTests", dependencies: ["LaneCore", "Lane"])
     ],
     swiftLanguageModes: [.v6]
 )

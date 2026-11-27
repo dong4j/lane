@@ -1,4 +1,4 @@
-// Portlane Pen preview. Draws a directional cue over the editable track.
+// Lane Pen preview. Draws a directional cue over the editable track.
 // The schematic path follows the connection initiator, independent of traffic.
 precision mediump float;
 
