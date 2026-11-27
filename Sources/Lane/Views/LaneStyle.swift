@@ -72,11 +72,14 @@ struct LaneHoverHighlight: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background {
+            .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(hovered && enabled ? LaneStyle(scheme: scheme).control : .clear)
+                    .fill((scheme == .dark ? Color.white : Color.black)
+                        .opacity(hovered && enabled ? 0.07 : 0))
+                    .allowsHitTesting(false)
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.11), value: hovered)
             }
+            .contentShape(Rectangle())
             .onHover { hovered = $0 }
     }
 }
@@ -183,6 +186,7 @@ struct LaneButtonStyle: ButtonStyle {
             }
             .opacity(enabled ? (configuration.isPressed ? 0.67 : 1) : 0.48)
             .contentShape(RoundedRectangle(cornerRadius: 9))
+            .modifier(LaneHoverHighlight())
     }
 }
 

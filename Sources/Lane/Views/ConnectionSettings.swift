@@ -50,9 +50,9 @@ struct ConnectionSettings: View {
 
                 LabeledContent {
                     HStack(spacing: 8) {
-                        Button(L10n.text("Use System Client", "使用系统客户端")) { apply("") }
+                        SettingsActionButton(L10n.text("Use System Client", "使用系统客户端")) { apply("") }
                             .disabled(checking || (preferences.customSSHPath.isEmpty && draft.isEmpty))
-                        Button(L10n.text("Verify and Apply", "验证并应用")) { apply(draft) }
+                        SettingsActionButton(L10n.text("Verify and Apply", "验证并应用")) { apply(draft) }
                             .disabled(checking || draft == preferences.customSSHPath)
                     }
                 } label: {

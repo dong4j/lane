@@ -14,18 +14,18 @@ struct DataSettings: View {
         Form {
             Section(L10n.text("Import", "导入")) {
                 LabeledContent("~/.ssh/config") {
-                    Button(L10n.text("Preview Hosts…", "预览主机…")) {
+                    SettingsActionButton(L10n.text("Preview Hosts…", "预览主机…")) {
                         finish { preview = try model.sshConfigImport() }
                     }
                 }
                 LabeledContent(L10n.text("Lane, Porthole or Codinn", "Lane、Porthole 或 Codinn")) {
-                    Button(L10n.text("Choose File…", "选择文件…"), action: chooseBackup)
+                    SettingsActionButton(L10n.text("Choose File…", "选择文件…"), action: chooseBackup)
                 }
             }
 
             Section {
                 LabeledContent(L10n.text("Tunnel configurations", "隧道配置")) {
-                    Button(L10n.text("Export Backup…", "导出备份…"), action: exportBackup)
+                    SettingsActionButton(L10n.text("Export Backup…", "导出备份…"), action: exportBackup)
                 }
             } header: {
                 Text(L10n.text("Export", "导出"))
@@ -39,7 +39,7 @@ struct DataSettings: View {
             if let fileURL = model.store.fileURL {
                 Section(L10n.text("Storage", "存储")) {
                     LabeledContent {
-                        Button(L10n.text("Show in Finder", "在 Finder 中显示")) { reveal(fileURL) }
+                        SettingsActionButton(L10n.text("Show in Finder", "在 Finder 中显示")) { reveal(fileURL) }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(L10n.text("Configuration file", "配置文件"))

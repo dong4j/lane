@@ -11,21 +11,22 @@ struct GeneralSettings: View {
     @State private var loginError: String?
     @State private var notificationStatus: UNAuthorizationStatus?
     @State private var notificationError: String?
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var systemServicesAvailable: Bool { !demo && TunnelNotifications.available }
     private var notificationsEnabled: Bool { preferences.notifyOnConnect || preferences.notifyOnFailure }
 
     var body: some View {
         Form {
-            Section(L10n.text("Appearance", "外观")) {
-                HStack(spacing: 10) {
-                    ForEach(LanePreferences.Appearance.allCases, id: \.self, content: appearanceCard)
-                }
-                .padding(.vertical, 4)
-            }
             Section(L10n.text("Application", "应用")) {
+                LabeledContent(L10n.text("Appearance", "外观")) {
+                    Picker(L10n.text("Appearance", "外观"), selection: $preferences.appearance) {
+                        Text(L10n.text("System", "跟随系统")).tag(LanePreferences.Appearance.system)
+                        Text(L10n.text("Light", "浅色")).tag(LanePreferences.Appearance.light)
+                        Text(L10n.text("Dark", "深色")).tag(LanePreferences.Appearance.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
                 Picker(L10n.text("Language", "语言"), selection: $preferences.language) {
                     Text(L10n.text("System Default", "跟随系统")).tag(LanePreferences.Language.system)
                     Text("简体中文").tag(LanePreferences.Language.chinese)
@@ -78,50 +79,13 @@ struct GeneralSettings: View {
 
             if loginStatus == .requiresApproval {
                 LabeledContent(L10n.text("Waiting for approval", "等待系统批准")) {
-                    Button(L10n.text("Open Login Items", "打开登录项")) { SMAppService.openSystemSettingsLoginItems() }
+                    SettingsActionButton(L10n.text("Open Login Items", "打开登录项")) { SMAppService.openSystemSettingsLoginItems() }
                 }
             }
             if let loginError {
                 Text(loginError).font(.caption).foregroundStyle(.red)
             }
         }
-    }
-
-    private func appearanceCard(_ choice: LanePreferences.Appearance) -> some View {
-        let style = LaneStyle(scheme: scheme)
-        let selected = preferences.appearance == choice
-        let title = switch choice {
-        case .system: L10n.text("System", "跟随系统")
-        case .light: L10n.text("Light", "浅色")
-        case .dark: L10n.text("Dark", "深色")
-        }
-        return Button {
-            preferences.appearance = choice
-        } label: {
-            VStack(spacing: 8) {
-                AppearanceSample(appearance: choice)
-                Text(title)
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(selected ? style.accent : style.text)
-                    .frame(maxWidth: .infinity)
-                    .overlay(alignment: .trailing) {
-                        if selected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(style.accent)
-                                .accessibilityHidden(true)
-                        }
-                    }
-            }
-            .padding(9)
-            .frame(maxWidth: .infinity)
-            .background(selected ? style.selected : style.surface, in: RoundedRectangle(cornerRadius: 10))
-            .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(selected ? style.accent : style.edge) }
-            .contentShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .animation(reduceMotion ? nil : LaneMotion.crossfade, value: selected)
     }
 
     /// Use the service's status after each write, including when approval is still pending.
@@ -152,61 +116,5 @@ struct GeneralSettings: View {
             notificationError = error.localizedDescription
         }
         notificationStatus = await TunnelNotifications.authorizationStatus()
-    }
-}
-
-/// A miniature library and route render directly from the same palette as the main window.
-private struct AppearanceSample: View {
-    let appearance: LanePreferences.Appearance
-
-    var body: some View {
-        ZStack {
-            miniature(appearance == .dark ? .dark : .light)
-            if appearance == .system {
-                miniature(.dark)
-                    .mask {
-                        HStack(spacing: 0) {
-                            Color.clear
-                            Rectangle()
-                        }
-                    }
-            }
-        }
-        .frame(width: 120, height: 54)
-        .accessibilityHidden(true)
-    }
-
-    private func miniature(_ scheme: ColorScheme) -> some View {
-        let style = LaneStyle(scheme: scheme)
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 3) {
-                ForEach([0xE37F82, 0xD8AD62, 0x6EAD96], id: \.self) { rgb in
-                    Circle().fill(Color(rgb: rgb)).frame(width: 4, height: 4)
-                }
-            }
-            HStack(spacing: 6) {
-                VStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 2).fill(style.selected).frame(height: 7)
-                    RoundedRectangle(cornerRadius: 2).fill(style.edge).frame(height: 4)
-                    Spacer(minLength: 0)
-                }
-                .padding(4)
-                .frame(width: 27)
-                .background(style.sidebar, in: RoundedRectangle(cornerRadius: 4))
-                VStack(alignment: .leading, spacing: 5) {
-                    Capsule().fill(style.secondary).frame(width: 23, height: 3)
-                    HStack(spacing: 0) {
-                        RoundedRectangle(cornerRadius: 2).fill(style.selected).frame(width: 12, height: 8)
-                        Rectangle().fill(style.accent).frame(height: 1)
-                        RoundedRectangle(cornerRadius: 2).fill(style.selected).frame(width: 12, height: 8)
-                    }
-                    .padding(4)
-                    .background(style.routeSurface, in: RoundedRectangle(cornerRadius: 3))
-                }
-            }
-        }
-        .padding(6)
-        .background(style.surface, in: RoundedRectangle(cornerRadius: 6))
-        .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(style.edge) }
     }
 }

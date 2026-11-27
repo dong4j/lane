@@ -10,7 +10,7 @@ struct LaneSettings: View {
             switch self {
             case .general: L10n.text("General", "通用")
             case .connection: L10n.text("Connection", "连接")
-            case .agent: L10n.text("Agent Access", "Agent 接入")
+            case .agent: L10n.text("Agent", "Agent 接入")
             case .data: L10n.text("Data", "数据")
             case .about: L10n.text("About", "关于")
             }
@@ -56,27 +56,33 @@ struct LaneSettings: View {
             }
             .animation(reduceMotion ? nil : LaneMotion.crossfade, value: page)
         }
-        .frame(width: 592, height: 552)
+        .frame(width: 460, height: 400)
         .background(style.window)
         .tint(style.accent)
     }
 
     private func pageButtons(style: LaneStyle) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 3) {
             ForEach(Page.allCases, id: \.self) { choice in
                 let selected = choice == page
                 Button {
                     page = choice
                 } label: {
-                    Label(choice.title, systemImage: choice.symbol)
-                        .font(.callout.weight(selected ? .semibold : .medium))
+                    HStack(spacing: 4) {
+                        Image(systemName: choice.symbol)
+                        Text(choice.title)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                    }
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(selected ? style.accent : style.secondary)
-                        .frame(minWidth: 108, minHeight: 30)
+                        .frame(maxWidth: .infinity, minHeight: 28)
                         .background(selected ? style.selected : .clear, in: RoundedRectangle(cornerRadius: 7))
                         .contentShape(RoundedRectangle(cornerRadius: 7))
                 }
                 .buttonStyle(.plain)
                 .modifier(LaneHoverHighlight())
+                .accessibilityLabel(choice.title)
                 .accessibilityAddTraits(selected ? .isSelected : [])
             }
         }
@@ -84,7 +90,8 @@ struct LaneSettings: View {
         .background(style.control, in: RoundedRectangle(cornerRadius: 10))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(L10n.text("Settings pages", "设置页面"))
-        .padding(.vertical, 12)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
     /// The packaged app supplies its own project homepage.
@@ -110,17 +117,41 @@ struct LaneSettings: View {
                 .padding(.top, 6)
             HStack(spacing: 12) {
                 if let homepage {
-                    Link(L10n.text("Project Homepage", "项目主页"), destination: homepage)
+                    SettingsActionButton(L10n.text("Project Homepage", "项目主页")) {
+                        NSWorkspace.shared.open(homepage)
+                    }
                 }
                 if let license {
-                    Button(L10n.text("Third-Party License", "第三方许可证")) {
+                    SettingsActionButton(L10n.text("Third-Party License", "第三方许可证")) {
                         NSWorkspace.shared.open(license)
                     }
-                    .buttonStyle(LaneButtonStyle())
                 }
             }
             .padding(.top, 6)
         }
         .padding(34)
+    }
+}
+
+/// Settings actions share the system's regular height and a single label width.
+struct SettingsActionButton: View {
+    let title: String
+    let action: () -> Void
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+                .frame(width: 120)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .modifier(LaneHoverHighlight())
     }
 }

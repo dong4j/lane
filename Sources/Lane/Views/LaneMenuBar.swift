@@ -2,13 +2,28 @@ import AppKit
 import SwiftUI
 import LaneCore
 
+/// Keeps the native status-item window in sync with the app's appearance and content size.
+struct LaneMenuPanel: View {
+    let model: LaneModel
+    @Environment(\.colorScheme) private var systemScheme
+
+    var body: some View {
+        let scheme: ColorScheme = switch model.preferences.appearance {
+        case .system: systemScheme
+        case .light: .light
+        case .dark: .dark
+        }
+        LaneMenuBar(model: model)
+            .environment(\.colorScheme, scheme)
+            .background(LaneMenuWindowFit())
+    }
+}
+
 /// A compact window-style menu extra keeps connection and clipboard actions in place.
 struct LaneMenuBar: View {
     let model: LaneModel
     @State private var expandedManaged: Set<UUID> = []
     @State private var expandedExternal: Set<Int32> = []
-    /// Measure the scrollable content so the popover never grows beyond its viewport.
-    @State private var contentHeight: CGFloat = 0
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var scheme
@@ -22,18 +37,14 @@ struct LaneMenuBar: View {
             ScrollView {
                 groups
                     .padding(.bottom, 8)
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
-                        contentHeight = height
-                    }
             }
-            .frame(height: min(contentHeight, 388), alignment: .top)
-            .animation(reduceMotion ? nil : LaneMotion.disclosure, value: contentHeight)
+            .frame(maxHeight: 388)
+            .fixedSize(horizontal: false, vertical: true)
             footer
         }
         .font(.system(size: 12))
         .padding(.horizontal, 10)
         .frame(width: 362)
-        .fixedSize(horizontal: false, vertical: true)
         .background(style.surface)
         .foregroundStyle(style.text)
         .tint(style.accent)
@@ -424,6 +435,32 @@ struct LaneMenuBar: View {
     private func showAgentActivity() {
         showMainWindow()
         model.showingAgentActivity = true
+    }
+}
+
+/// Keeps an open MenuBarExtra fitted to the content while its top edge stays anchored to the status item.
+private struct LaneMenuWindowFit: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { FitView() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class FitView: NSView {
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            // Resize after SwiftUI finishes laying out the disclosure transition.
+            Task { @MainActor [weak self] in self?.fitWindow() }
+        }
+
+        private func fitWindow() {
+            guard let window, window.isVisible, bounds.height > 0 else { return }
+            let delta = ceil(bounds.height) - window.contentLayoutRect.height
+            guard abs(delta) >= 1 else { return }
+
+            var frame = window.frame
+            frame.size.height += delta
+            frame.origin.y -= delta
+            window.setFrame(frame, display: true)
+        }
     }
 }
 

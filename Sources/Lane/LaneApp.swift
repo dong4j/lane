@@ -50,8 +50,7 @@ struct LaneApp: App {
         }
 
         MenuBarExtra(isInserted: menuBarVisible) {
-            LaneMenuBar(model: delegate.model)
-                .preferredColorScheme(preferredScheme)
+            LaneMenuPanel(model: delegate.model)
         } label: {
             Image(systemName: delegate.model.manager.hasConnectedSession ? "point.3.connected.trianglepath.dotted" : "arrow.left.arrow.right")
                 .accessibilityLabel("Lane")
