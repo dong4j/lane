@@ -1,8 +1,10 @@
-# Portlane
+# Lane 开发与设计记录
+
+[User Guide](usage.md) · [使用指南](usage.zh-CN.md) · [Agent MCP](agent-mcp.md) · [项目主页](../README.zh-CN.md)
 
 一款原生 macOS SSH 隧道工具。打开菜单栏，连接开发环境，或从本机已有的 OpenSSH 转发复制入口。新增规则和排查问题时，再打开主窗口。
 
-`Portlane` 是工作名，当前可在本地构建和运行。以下原型使用演示数据。
+以下原型使用演示数据，保留开发阶段的 Portlane 命名。当前应用图见[项目首页](../README.zh-CN.md)。
 
 ![Portlane UI v2。开发环境详情显示 PostgreSQL 的转发路径，规则列表中可以复制任一个本机地址。](design/previews/v2/main-light.png)
 
@@ -12,13 +14,13 @@
 
 ```sh
 ./scripts/build-app.sh
-open .build/Portlane.app
+open .build/Lane.app
 ```
 
-退出当前 Portlane 后，带 `--demo` 启动可查看 v2 示例。演示配置、偏好和连接状态只保存在进程内。同一 macOS 用户重复打开 Portlane 会唤回已经运行的主窗口。
+退出当前 Lane 后，带 `--demo` 启动可查看 v2 示例。演示配置、偏好和连接状态只保存在进程内。同一 macOS 用户重复打开 Lane 会唤回已经运行的主窗口。
 
 ```sh
-open .build/Portlane.app --args --demo
+open .build/Lane.app --args --demo
 swift test
 ./scripts/test-loopback.py
 ```
@@ -32,8 +34,8 @@ swift test
 - **通用**可以切换外观和入口位置，设置登录启动及连接通知。语言在下次启动时切换，登录启动和通知权限由 macOS 管理。
 - **连接**可以调整 Mac 唤醒后的恢复行为和 OpenSSH 客户端。验证后的路径从下一次连接或重连起使用。单条隧道是否随应用启动，在其编辑器的高级选项里设置。
 - **Agent 接入**可以配对本机客户端、复制 Codex 或 Claude Code 注册命令、复制 Cursor 或通用 MCP 配置，并设置哪些环回规则可申请。待审批、进行中的申请和历史记录在「Agent 活动」。[接入与审计说明](06-agent-mcp.md)
-- **数据**支持预览导入 `~/.ssh/config`、Portlane 和 Porthole 备份以及 Codinn 的兼容导出，支持导出隧道配置并在 Finder 定位存储。已保存的密码和私钥口令留在钥匙串。
-- **关于**显示版本和随包分发的第三方许可。打包时可在 `scripts/Info.plist` 的 `PortlaneProjectURL` 填写正式项目地址，应用会显示主页链接。
+- **数据**支持预览导入 `~/.ssh/config`、Lane 和 Porthole 备份以及 Codinn 的兼容导出，支持导出隧道配置并在 Finder 定位存储。已保存的密码和私钥口令留在钥匙串。
+- **关于**显示当前版本、项目主页和随包分发的第三方许可。
 
 ## 评审入口
 
