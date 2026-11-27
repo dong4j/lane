@@ -10,6 +10,16 @@ if ProcessInfo.processInfo.environment[AskpassEnvironment.socketPath] != nil {
     exit(AskpassHelper.run(prompt: arguments.dropFirst().joined(separator: " ")))
 }
 
+do {
+    if try !PortlaneInstance.claim() {
+        PortlaneInstance.activatePrimary()
+        exit(EXIT_SUCCESS)
+    }
+} catch {
+    NSLog("Portlane: could not acquire the application lock: %@", error.localizedDescription)
+    exit(EXIT_FAILURE)
+}
+
 // Resolve the language before displaying the first view so it stays fixed until the next launch.
 _ = L10n.launchedLanguage
 PortlaneApp.main()

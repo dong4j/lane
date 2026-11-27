@@ -74,6 +74,10 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         applyPresentation()
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(activateExistingInstance(_:)), name: PortlaneInstance.activation,
+            object: PortlaneInstance.user, suspensionBehavior: .deliverImmediately
+        )
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -100,6 +104,17 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard model.openMainWindow != nil else { return true }
+        model.showMainWindow()
+        return false
+    }
+
+    /// Both Finder and a rejected second process can restore the existing SwiftUI scene.
+    @objc private func activateExistingInstance(_ notification: Notification) {
+        model.showMainWindow()
+    }
+
     func applyPresentation() {
         NSApp.setActivationPolicy(model.preferences.presentation == .menuBarOnly ? .accessory : .regular)
     }
@@ -110,6 +125,7 @@ final class PortlaneDelegate: NSObject, NSApplicationDelegate, UNUserNotificatio
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        DistributedNotificationCenter.default().removeObserver(self)
         model.manager.shutdown()
     }
 }
