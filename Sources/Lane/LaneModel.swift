@@ -190,9 +190,6 @@ final class LaneModel {
                 L10n.text("Match conditions were skipped in \(path).", "已跳过 \(path) 中的 Match 条件。")
             }
         }
-        if preview.tunnels.isEmpty {
-            preview.configWarnings.append(L10n.text("No new, valid forwards were found.", "没有找到可导入的新转发。"))
-        }
         return preview
     }
 
