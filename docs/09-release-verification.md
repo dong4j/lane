@@ -26,9 +26,9 @@ sh scripts/package-release.sh
 (cd .build/dist && shasum -a 256 -c SHA256SUMS.txt)
 ```
 
-## 首次配置发布
+## GitHub Actions 自动发布
 
-在 GitHub Actions 的 `release` 环境中配置以下机密。
+[Lane v0.1.0](https://github.com/dong4j/lane/releases/tag/v0.1.0) 使用 CI 构建产物，在本机用 Developer ID 签名并完成 Apple 公证。后续由 GitHub Actions 自动签名和发布时，在仓库的 `release` 环境中配置以下机密。
 
 | Secret | 内容 |
 | --- | --- |

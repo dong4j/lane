@@ -22,7 +22,8 @@
 ## 发布与验收
 
 - [x] **12 · 准备稳定安装入口。** 本机生成 `Lane-0.1.0-macOS-arm64.zip` 和 `SHA256SUMS.txt`。工作流配置为由匹配的标签触发签名、公证和 Release，英文和中文 README 都提供下载与校验步骤。
-  - [ ] **公开发布。** GitHub 当前没有 Lane Release。需要为 `release` 环境配置签名和公证凭据，确认发布版本，再用公开下载包完成首次启动验收。
+  - [x] **公开发布。** [Lane v0.1.0](https://github.com/dong4j/lane/releases/tag/v0.1.0) 已发布。首版使用 GitHub CI 构建与本机 Developer ID 签名。公开下载包通过 SHA-256、签名、公证票据和 Gatekeeper 验证。
+  - [ ] **云端自动签名。** 后续通过 GitHub Actions 自动签名和公证时，需要在 `release` 环境中配置[发布机密](09-release-verification.md#github-actions-自动发布)。
 - [x] **13 · 固化高频回归的发布验收。** 本机使用与 CI 一致的 `mcp==1.26.0`，从实际通用 JSON 走完列举、建连、取址、访问和释放。CI 工作流已纳入这条路径。
   - [ ] **真机交互。** [发布验收](09-release-verification.md)记录菜单边界、整行折叠、独立复制、键盘焦点、浅深色、VoiceOver 和睡眠唤醒。在最低支持版本和当前使用的 macOS 上走查。
 
