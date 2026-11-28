@@ -210,7 +210,7 @@ struct LaneMenuBar: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(lease.route.name).font(.system(size: 13, weight: .semibold))
                             HStack(spacing: 4) {
-                                Text(lease.clientName)
+                                Text(lease.displayClientName)
                                     .lineLimit(1).truncationMode(.middle)
                                 Text("·").accessibilityHidden(true)
                                 if lease.state == .ready, let expires = lease.expiresAt {
@@ -240,7 +240,7 @@ struct LaneMenuBar: View {
                         }
                     }
                     .buttonStyle(LaneButtonStyle())
-                    .accessibilityLabel(L10n.text("End lease for \(lease.clientName)", "结束 \(lease.clientName) 的使用"))
+                    .accessibilityLabel(L10n.text("End lease for \(lease.displayClientName)", "结束 \(lease.displayClientName) 的使用"))
                 }
                 .padding(.horizontal, 7)
             }

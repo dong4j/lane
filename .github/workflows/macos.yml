@@ -29,12 +29,21 @@ jobs:
           swift --version
           python3 --version
 
+      - name: Set up Python for the MCP client
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Install the MCP test SDK
+        run: python3 -m pip install --disable-pip-version-check mcp==1.26.0
+
       - name: Build Debug app
         run: ./scripts/build-app.sh debug
 
       - name: Run Swift and loopback SSH tests
         run: |
           export LANE_TEST_MCP_HELPER="$PWD/.build/Lane.app/Contents/MacOS/Lane"
+          export LANE_TEST_MCP_CLIENT="$PWD/scripts/test-mcp-client.py"
           ./scripts/test-loopback.py
 
       - name: Build and verify Release app

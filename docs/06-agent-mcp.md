@@ -41,7 +41,7 @@ Lane 在 MCP 初始化时提供使用说明。也可以在项目指令中要求 
 
 | 工具 | 操作 |
 | --- | --- |
-| `lane_list` | 列出符合条件的环回规则 `rules`、已保存的 SSH 配置 `profiles` 和 `can_request`。 |
+| `lane_list` | 列出环回规则 `rules` 及其 `listen_address`、已保存的 SSH 配置 `profiles` 和 `can_request`。传入 `include_external: true` 可查看已核实的外部环回 `-L` 入口。 |
 | `lane_request` | 申请使用共享规则、临时目标或已确认的外部入口，返回申请编号和当前状态。 |
 | `lane_status` | 以 `lease_id` 查询本配对的申请。状态为 `ready` 时，`lease.address` 可用于连接，`expires_at` 为到期时间。 |
 | `lane_release` | 以 `lease_id` 释放本配对的申请，可重复调用。 |
@@ -60,7 +60,7 @@ Lane 在 MCP 初始化时提供使用说明。也可以在项目指令中要求 
 ```
 
 - **临时目标**用 `kind: "temporary"`，从 `lane_list` 返回的 `profiles` 中选一个 ID 填入 `profile_id`，再填 `listen_port`、`target_host` 和 `target_port`。没有环回规则的已保存配置也可选择，认证沿用该 SSH 配置。监听默认 `127.0.0.1`，可设 `listen_host: "::1"`。
-- **外部入口**用 `kind: "external"`，填 `external_address`，例如 `127.0.0.1:3113`。Lane 要能在本机观察到监听，并把它与外部 SSH 的 `-L` 参数对应。释放、到期或人工结束只解除引用，外部 SSH 继续由原进程管理。
+- **外部入口**用 `kind: "external"`，把 `lane_list` 传入 `{"include_external": true}` 后返回的 `listen_address` 填入 `external_address`，例如 `127.0.0.1:3113`。Lane 会重新核实监听。释放、到期或人工结束只解除引用，外部 SSH 继续由原进程管理。
 
 申请只启动选中的环回 `-L` 规则。Agent 和手动连接匹配同一条规则时复用现有监听。选「保持连接」会同时打开配置中的其他启用规则，最后一个 Agent 释放后手动连接继续运行。转发路径或 SSH 配置改动后，Lane 会结束受影响的申请并刷新可用规则。
 
@@ -68,9 +68,11 @@ Lane 在 MCP 初始化时提供使用说明。也可以在项目指令中要求 
 
 ## 审计和排障
 
-- 从主窗口或菜单栏打开「Agent 活动」。在「使用中」可复制已就绪地址或结束使用。「历史」支持按客户端、项目、地址或申请编号查找，展开可查看请求、授权、连接、复用、重连和结束原因。
-- 记录保存在 `~/Library/Application Support/Lane/Agent/activity.json`。SSH 凭据仍由 macOS 钥匙串及 OpenSSH 管理。Agent 审计只写管理动作和路径元数据。配对密钥、业务流量和 OpenSSH 运行日志分开放置。
+- 从主窗口或菜单栏打开「Agent 活动」。「使用中」可复制地址或结束使用。「历史」支持按客户端、项目、SSH 主机、目标、入口或申请编号查找，展开可看失败发生在哪一步。
+- 记录保存在 `~/Library/Application Support/Lane/Agent/activity.sqlite3`。旧的 `activity.json` 会导入一次并保留原文件。通用 MCP 的客户端名称标为「客户端自报」，鉴权沿用本机配对凭据。
+- Agent 审计记录管理动作和路径元数据。SSH 凭据仍由 macOS 钥匙串及 OpenSSH 管理，配对密钥、业务流量和 OpenSSH 运行日志分别处理。
 - 正常退出会结束当前申请并关闭 Lane 管理的 SSH。重启可查询历史，上一进程留下的未结申请会标为已结束。异常退出后若仍观察到 SSH 监听，可以在「本机发现」核查。
 - `read_only` 表示 Agent 接入未开启。`not_paired` 表示客户端身份文件缺失或无效，需要重新复制接入配置。`lane_unavailable` 表示需要在本机启动 Lane。`route_unavailable` 时核对已保存的规则或 SSH 配置。`external_unverified` 时在「本机发现」核对监听和转发参数。
+- `local_port_in_use` 表示本机监听端口冲突。`authentication_failed` 时检查 SSH 密钥或登录凭据。用相同幂等键重试同一份失败请求时会返回原结果，修正后用新的键重新连接。
 
 stdio 支持 `2026-07-28` 的 `server/discover`，以及从 `2024-11-05` 到 `2025-11-25` 的 `initialize` 握手。客户端接入格式可查阅 [MCP stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)、[Codex MCP](https://developers.openai.com/codex/mcp)、[Claude Code MCP](https://code.claude.com/docs/en/mcp) 和 [Cursor MCP](https://cursor.com/docs/context/mcp)。

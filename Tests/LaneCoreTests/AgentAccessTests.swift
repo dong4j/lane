@@ -19,6 +19,7 @@ struct AgentAccessTests {
         let rule = try #require(enabled.rules?.first?.id)
         #expect(enabled.canRequest == true)
         #expect(enabled.rules?.count == 1)
+        #expect(enabled.rules?.first?.listenAddress == "127.0.0.1:3113")
         let request = AgentToolArguments(kind: .shared, idempotencyKey: "postgres", purpose: "Inspect local test data", ruleID: rule)
 
         let opened = try #require(await rig.call(first, .request, request).lease)
@@ -98,6 +99,7 @@ struct AgentAccessTests {
         invalid.targetHost = "/var/run/service.sock"
         #expect(await rig.call(credential, .request, invalid).error?.code == "invalid_arguments")
         invalid = request
+        invalid.idempotencyKey = "missing-profile"
         invalid.profileID = UUID()
         #expect(await rig.call(credential, .request, invalid).error?.code == "route_unavailable")
 
@@ -140,6 +142,31 @@ struct AgentAccessTests {
         #expect(try Data(contentsOf: migration.ledger) == legacy)
         let migrated = AgentAccess(manager: TunnelManager(store: rig.manager.store, demo: true), files: migration)
         #expect(migrated.history.map(\.id) == [lease.id])
+    }
+
+    @Test
+    func invalidRouteAttemptsAreAuditedOnceAndGenericNamesStayInformational() async throws {
+        let rig = try Rig()
+        defer { rig.clean() }
+        let client = try rig.pair("Generic", canRequest: true)
+        let missing = UUID()
+        let request = AgentToolArguments(kind: .shared, idempotencyKey: "missing", purpose: "Test missing rule", ruleID: missing)
+        let first = AgentToolCall(credential: client, tool: .request, arguments: request, reportedClientName: "Client One")
+        #expect(await rig.access.handle(first).error?.code == "route_unavailable")
+        #expect(await rig.access.handle(first).error?.code == "route_unavailable")
+        #expect(rig.access.history.count == 1)
+        #expect(rig.access.history.first?.reason == .routeUnavailable)
+        #expect(rig.access.history.first?.reportedClientName == "Client One")
+        #expect(rig.access.history.first?.matchesHistory(missing.uuidString) == true)
+
+        let rule = try rig.share()
+        let valid = AgentToolArguments(kind: .shared, idempotencyKey: "valid", purpose: "Test valid rule", ruleID: rule)
+        let next = AgentToolCall(credential: client, tool: .request, arguments: valid, reportedClientName: "Client Two")
+        let lease = try #require(await rig.access.handle(next).lease)
+        #expect(rig.access.active.first?.reportedClientName == "Client Two")
+        #expect(rig.access.active.first?.matchesHistory("dev localhost:3113") == true)
+        #expect(await rig.call(client, .release, AgentToolArguments(leaseID: lease.id)).lease?.state == .released)
+        #expect(rig.access.history.first?.reportedClientName == "Client Two")
     }
 
     @Test

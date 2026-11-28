@@ -37,7 +37,7 @@ Lane supplies usage instructions during MCP initialization. You can also tell yo
 
 | Tool | Use |
 | --- | --- |
-| `lane_list` | Return eligible loopback `rules`, saved SSH `profiles`, and `can_request`. |
+| `lane_list` | Return eligible loopback `rules` with `listen_address`, saved SSH `profiles`, and `can_request`. Set `include_external: true` to include verified external loopback `-L` routes. |
 | `lane_request` | Request a shared rule, a temporary destination, or an observed external listener. |
 | `lane_status` | Poll with the returned `lease_id`. Use `lease.address` when `state` is `ready`. |
 | `lane_release` | Release a lease from this pairing with `lease_id`. It is safe to retry. |
@@ -56,7 +56,7 @@ For a shared rule, use an ID from `lane_list`. Repeat the same `idempotency_key`
 ```
 
 - **Temporary destination.** Use `kind: "temporary"`, an ID from `lane_list` → `profiles` as `profile_id`, plus `listen_port`, `target_host`, and `target_port`. A saved profile can be selected even if it has no eligible loopback rule. The listener defaults to `127.0.0.1`. For IPv6, set `listen_host` to `::1`.
-- **External listener.** Use `kind: "external"` and `external_address`, for example `127.0.0.1:3113`. Lane must observe a matching loopback `-L` listener. Releasing the lease ends the reference while the original process retains ownership of the listener.
+- **External listener.** Take the exact `listen_address` from `lane_list` with `{"include_external": true}` and pass it as `external_address` with `kind: "external"`. Lane rechecks the matching loopback `-L` listener. Releasing the lease ends the reference while the original process retains ownership of the listener.
 
 A request opens only the selected loopback `-L` rule. Compatible Agent and manual connections share the existing listener. Choose **Keep Connected** from the menu or main window to open any sibling rules and keep the tunnel after the last Agent lease ends. Changing a saved route ends affected leases and refreshes the available rule.
 
@@ -64,9 +64,9 @@ New SSH connections start in `connecting` and have up to two minutes to become r
 
 ## Review and troubleshoot
 
-Open **Agent Activity** from the window or menu bar. In **Active**, copy a ready address or end a lease. Search **History** by client, project, address, or request ID to review authorization, connection, reuse, and end events.
+Open **Agent Activity** from the window or menu bar. In **Active**, copy a ready address or end a lease. Search **History** by client, project, SSH host, destination, address, or request ID. Expand a row to see connection events, failure reasons, and what to check.
 
-The audit is local under `~/Library/Application Support/Lane/Agent/activity.json`. It contains route metadata and the client's stated purpose. Pairing credentials, SSH credentials, and forwarded traffic are stored or handled separately. Lane ends outstanding leases on quit and marks any left from an interrupted run as ended after restart.
+The audit is local under `~/Library/Application Support/Lane/Agent/activity.sqlite3`. Lane imports the previous `activity.json` once and retains the original file. Generic clients can supply a name through MCP. Lane labels it **client-reported** and uses the local pairing credential for authentication. Pairing credentials, SSH credentials, and forwarded traffic are handled separately. Lane ends outstanding leases on quit and marks any left from an interrupted run as ended after restart.
 
 | Response | What to check |
 | --- | --- |
@@ -75,5 +75,7 @@ The audit is local under `~/Library/Application Support/Lane/Agent/activity.json
 | `lane_unavailable` | Open Lane on this Mac, then retry. |
 | `route_unavailable` | Verify the shared rule and the saved SSH profile. |
 | `external_unverified` | Check the listener and arguments under Local discovery. |
+| `local_port_in_use` | Free the local port or pick another loopback port. |
+| `authentication_failed` | Check the saved SSH key or login credentials. |
 
 The bundled stdio helper supports `server/discover` for MCP `2026-07-28` and `initialize` for revisions from `2024-11-05` through `2025-11-25`.

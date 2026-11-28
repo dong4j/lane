@@ -135,12 +135,26 @@ struct AgentLease: Codable, Identifiable, Sendable {
         case accessDisabled = "access_disabled"
         case clientRevoked = "client_revoked"
         case routeChanged = "route_changed"
+        case routeUnavailable = "route_unavailable"
         case externalGone = "external_listener_gone"
+        case localPortInUse = "local_port_in_use"
+        case authenticationFailed = "authentication_failed"
         case sshFailed = "ssh_failed"
         case startupTimedOut = "startup_timed_out"
         case approvalTimedOut = "approval_timed_out"
         case appQuit = "app_quit"
         case appRestarted = "app_restarted"
+
+        var hint: String? {
+            switch self {
+            case .routeUnavailable, .routeChanged: "Run lane_list again and choose a current rule or SSH profile."
+            case .externalGone: "Check that the external SSH process still owns the loopback listener."
+            case .localPortInUse: "Free the local port or choose a different loopback port."
+            case .authenticationFailed: "Check the key or login credentials in Lane."
+            case .sshFailed, .startupTimedOut: "Check the SSH connection and its diagnostics in Lane."
+            default: nil
+            }
+        }
     }
 
     struct Event: Codable, Identifiable, Sendable {
@@ -155,6 +169,7 @@ struct AgentLease: Codable, Identifiable, Sendable {
     let id: UUID
     let clientID: UUID
     let clientName: String
+    var reportedClientName: String?
     let requestKey: String
     let input: AgentLeaseInput
     let route: AgentRoute
@@ -172,6 +187,16 @@ struct AgentLease: Codable, Identifiable, Sendable {
         return AgentPreparedRoute.Key(profileID: profileID, fingerprint: fingerprint)
     }
     var reason: Reason? { events.last?.reason }
+    var displayClientName: String {
+        reportedClientName.map { L10n.text("\($0) · client-reported", "\($0) · 客户端自报") } ?? clientName
+    }
+
+    func matchesHistory(_ query: String) -> Bool {
+        let terms = query.split(whereSeparator: \.isWhitespace)
+        let values = [id.uuidString, clientName, reportedClientName, route.name, route.listenAddress,
+                      route.sshHost, route.destination, input.project, input.purpose].compactMap { $0 }
+        return terms.allSatisfy { term in values.contains { $0.localizedCaseInsensitiveContains(term) } }
+    }
 
     mutating func move(to state: State, action: Action, at date: Date, reason: Reason? = nil) {
         self.state = state

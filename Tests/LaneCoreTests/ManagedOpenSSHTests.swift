@@ -206,8 +206,10 @@ struct ManagedOpenSSHTests {
         let ruleID = try #require(access.ledger.shares.first { $0.forwardingID == rule.id }?.id)
         #expect(try await config.check() == true)
         if let client = environment["LANE_TEST_MCP_CLIENT"] {
-            try await runExternalMCPClient(client, configuration: config, directory: directory)
+            let generic = try access.configuration(forClientNamed: "Generic", executable: helper)
+            try await runExternalMCPClient(client, configuration: generic, directory: directory)
             try await waitFor { manager.runningPIDs.isEmpty }
+            #expect(Set(access.history.compactMap(\.reportedClientName)) == ["Lane SDK fixture", "Lane external SDK fixture"])
         }
 
         func call(_ client: AgentClient, _ tool: AgentTool, _ arguments: AgentToolArguments) async throws -> AgentToolResult {
@@ -308,10 +310,28 @@ struct ManagedOpenSSHTests {
         #expect(blocked.address == nil)
         try await waitFor { access.history.first?.id == blocked.id }
         #expect(access.history.first?.state == .failed)
+        #expect(access.history.first?.reason == .localPortInUse)
         #expect(access.history.first?.events.map(\.action) == [.requested, .authorized, .failed])
 
+        var badKey = profile
+        badKey.id = UUID()
+        badKey.identityFile = directory.appending(path: "host_ed25519").path
+        try manager.store.save(badKey)
+        access.libraryChanged()
+        var badAuth = temporaryArgs
+        badAuth.idempotencyKey = "wrong-key"
+        badAuth.profileID = badKey.id
+        badAuth.listenPort = fixture.localPort
+        let rejected = try #require(try await call(first, .request, badAuth).lease)
+        try await waitFor { access.history.first?.id == rejected.id }
+        #expect(access.history.first?.reason == .authenticationFailed)
+        try await waitFor { manager.runningPIDs.isEmpty }
+
+        let inventory = try await call(first, .list, AgentToolArguments(includeExternal: true))
+        let entries = Set(fixture.externalPorts.map { "127.0.0.1:\($0)" })
+        #expect(entries.isSubset(of: Set(inventory.external?.map(\.listenAddress) ?? [])))
         var externalArgs = AgentToolArguments(kind: .external, idempotencyKey: "external", purpose: "Reuse external loopback")
-        externalArgs.externalAddress = "127.0.0.1:\(fixture.externalPorts[0])"
+        externalArgs.externalAddress = "127.0.0.1:\(fixture.externalPorts[1])"
         let external = try #require(try await call(first, .request, externalArgs).lease)
         #expect(external.state == .ready)
         #expect(external.address == externalArgs.externalAddress)
@@ -319,8 +339,14 @@ struct ManagedOpenSSHTests {
         let externalLookup = AgentToolArguments(leaseID: external.id)
         #expect(try await call(first, .status, externalLookup).lease?.state == .ready)
         #expect(try await call(first, .release, externalLookup).lease?.state == .released)
-        #expect(try request(["http://127.0.0.1:\(fixture.externalPorts[0])/agent-external"]) == "lane-fixture")
+        #expect(try request(["http://127.0.0.1:\(fixture.externalPorts[1])/agent-external"]) == "lane-fixture")
         #expect(access.history.first?.events.map(\.action) == [.requested, .authorized, .reused, .released])
+
+        externalArgs.idempotencyKey = "unverified"
+        externalArgs.externalAddress = "127.0.0.1:\(fixture.localPort)"
+        #expect(try await call(first, .request, externalArgs).error?.code == "external_unverified")
+        #expect(try await call(first, .request, externalArgs).error?.code == "external_unverified")
+        #expect(access.history.filter { $0.reason == .externalGone }.count == 1)
     }
 
     /// An opt-in client can exercise the exact JSON users get from Settings against this fixture.

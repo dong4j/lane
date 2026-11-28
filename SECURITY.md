@@ -4,4 +4,4 @@ Use GitHub's [private vulnerability reporting](https://github.com/dong4j/lane/se
 
 Replace any SSH keys, passwords, pairing files, and sensitive routes in your report with sample data. Use regular [GitHub issues](https://github.com/dong4j/lane/issues) for feature requests and non-security bugs.
 
-Each Agent pairing is private to a macOS account. A process that can read a pairing file can use that pairing. If you suspect a file was exposed, revoke it in **Settings → Agent Access** and create a new pairing for the client.
+Each Agent pairing is private to a macOS account. A process that can read a pairing file can use that pairing. If you suspect a file was exposed, turn off **Allow Agent access** in Lane Settings while you investigate.

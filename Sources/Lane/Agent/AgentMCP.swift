@@ -13,6 +13,7 @@ enum AgentMCP {
     private static let legacyRevisions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
     private static let protocolVersionKey = "io.modelcontextprotocol/protocolVersion"
     private static let clientCapabilitiesKey = "io.modelcontextprotocol/clientCapabilities"
+    private static let clientInfoKey = "io.modelcontextprotocol/clientInfo"
     private static let serverInfoKey = "io.modelcontextprotocol/serverInfo"
     private static let serverInfo = ["name": name, "version": (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.0"]
     private static let capabilities: [String: [String: Bool]] = ["tools": [:]]
@@ -39,8 +40,10 @@ enum AgentMCP {
             return try? JSONDecoder().decode(AgentCredential.self, from: data)
         }
         var negotiatedLegacy: String?
+        var legacyClientName: String?
         while let line = readLine() {
-            if let reply = response(to: Data(line.utf8), credential: credential, negotiatedLegacy: &negotiatedLegacy),
+            if let reply = response(to: Data(line.utf8), credential: credential, negotiatedLegacy: &negotiatedLegacy,
+                                    legacyClientName: &legacyClientName),
                var data = try? JSONSerialization.data(withJSONObject: reply, options: [.sortedKeys, .withoutEscapingSlashes]) {
                 data.append(UInt8(ascii: "\n"))
                 FileHandle.standardOutput.write(data)
@@ -49,7 +52,8 @@ enum AgentMCP {
         return EXIT_SUCCESS
     }
 
-    private static func response(to data: Data, credential: AgentCredential?, negotiatedLegacy: inout String?) -> [String: Any]? {
+    private static func response(to data: Data, credential: AgentCredential?, negotiatedLegacy: inout String?,
+                                 legacyClientName: inout String?) -> [String: Any]? {
         guard let decoded = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
             return rpcError(id: NSNull(), code: -32700, message: "Parse error")
         }
@@ -89,6 +93,7 @@ enum AgentMCP {
             }
             let version = legacyRevisions.contains(requested) ? requested : legacyRevisions[0]
             negotiatedLegacy = version
+            legacyClientName = (parameters["clientInfo"] as? [String: Any])?["name"] as? String
             result = [
                 "protocolVersion": version,
                 "serverInfo": serverInfo,
@@ -106,7 +111,9 @@ enum AgentMCP {
             if let arguments = parameters["arguments"], !(arguments is [String: Any]) {
                 return rpcError(id: id, code: -32602, message: "Tool arguments must be an object")
             }
-            let reply = call(tool, arguments: parameters["arguments"] as? [String: Any] ?? [:], credential: credential)
+            let clientName = modern ? (metadata[clientInfoKey] as? [String: Any])?["name"] as? String : legacyClientName
+            let reply = call(tool, arguments: parameters["arguments"] as? [String: Any] ?? [:], credential: credential,
+                             reportedClientName: clientName)
             guard let payload = try? AgentToolResult.encoder().encode(reply),
                   let structured = try? JSONSerialization.jsonObject(with: payload) else {
                 return rpcError(id: id, code: -32603, message: "Could not encode tool result")
@@ -130,11 +137,13 @@ enum AgentMCP {
         return ["jsonrpc": "2.0", "id": id, "result": result]
     }
 
-    private static func call(_ tool: AgentTool, arguments: [String: Any], credential: AgentCredential?) -> AgentToolResult {
+    private static func call(_ tool: AgentTool, arguments: [String: Any], credential: AgentCredential?,
+                             reportedClientName: String?) -> AgentToolResult {
         do {
             guard let credential else { throw AgentToolError.notPaired }
             let input = try tool.decode(arguments)
-            return try AgentIPC.send(AgentToolCall(credential: credential, tool: tool, arguments: input))
+            return try AgentIPC.send(AgentToolCall(credential: credential, tool: tool, arguments: input,
+                                                   reportedClientName: reportedClientName))
         } catch let error as AgentToolError {
             return AgentToolResult(error: error)
         } catch {

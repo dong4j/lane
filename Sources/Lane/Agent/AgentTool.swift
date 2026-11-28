@@ -18,8 +18,9 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
         }
         switch self {
         case .list:
-            description = "List available loopback forwarding rules and saved SSH profiles for temporary requests."
-            properties = [:]
+            description = "List saved SSH profiles, available loopback rules with their listen addresses, and optionally verified external loopback forwards."
+            properties = ["include_external": ["type": "boolean", "default": false,
+                                                "description": "Also list external loopback SSH -L listeners Lane can verify."]]
             required = []
         case .request:
             description = """
@@ -96,12 +97,14 @@ struct AgentToolArguments: Codable, Sendable {
     var targetPort: Int?
     var externalAddress: String?
     var leaseID: UUID?
+    var includeExternal: Bool?
 
     enum CodingKeys: String, CodingKey {
         case kind, purpose, project
         case idempotencyKey = "idempotency_key", ttlSeconds = "ttl_seconds", ruleID = "rule_id", profileID = "profile_id"
         case listenHost = "listen_host", listenPort = "listen_port", targetHost = "target_host", targetPort = "target_port"
         case externalAddress = "external_address", leaseID = "lease_id"
+        case includeExternal = "include_external"
     }
 
     /// Normalize before the idempotency comparison so retries identify the same intent.
@@ -181,6 +184,7 @@ struct AgentToolCall: Codable, Sendable {
     let credential: AgentCredential
     let tool: AgentTool
     let arguments: AgentToolArguments
+    var reportedClientName: String?
 }
 
 /// Returns route choices or a client-owned lease whose address is available once ready.
@@ -191,6 +195,7 @@ struct AgentToolResult: Codable, Sendable {
         let name: String
         let sshHost: String?
         let destination: String?
+        let listenAddress: String
 
         init(share: AgentShare, route: AgentRoute) {
             id = share.id
@@ -198,9 +203,12 @@ struct AgentToolResult: Codable, Sendable {
             name = route.name
             sshHost = route.sshHost
             destination = route.destination
+            listenAddress = route.listenAddress
         }
 
-        enum CodingKeys: String, CodingKey { case id, profileID = "profile_id", name, sshHost = "ssh_host", destination }
+        enum CodingKeys: String, CodingKey {
+            case id, profileID = "profile_id", name, sshHost = "ssh_host", destination, listenAddress = "listen_address"
+        }
     }
 
     /// A saved SSH profile can be used for a temporary route even when it has no shared rules.
@@ -225,6 +233,7 @@ struct AgentToolResult: Codable, Sendable {
         let expiresAt: Date?
         let reason: AgentLease.Reason?
         let external: Bool
+        let hint: String?
 
         init(_ lease: AgentLease) {
             id = lease.id
@@ -233,18 +242,20 @@ struct AgentToolResult: Codable, Sendable {
             expiresAt = lease.expiresAt
             reason = lease.reason
             external = lease.external != nil
+            hint = lease.reason?.hint
         }
 
-        enum CodingKeys: String, CodingKey { case id, state, address, expiresAt = "expires_at", reason, external }
+        enum CodingKeys: String, CodingKey { case id, state, address, expiresAt = "expires_at", reason, external, hint }
     }
 
     var rules: [Rule]?
     var profiles: [Profile]?
+    var external: [AgentRoute]?
     var canRequest: Bool?
     var lease: Lease?
     var error: AgentToolError?
 
-    enum CodingKeys: String, CodingKey { case rules, profiles, canRequest = "can_request", lease, error }
+    enum CodingKeys: String, CodingKey { case rules, profiles, external, canRequest = "can_request", lease, error }
 
     static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()

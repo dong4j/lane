@@ -197,13 +197,24 @@ final class AgentAccess {
             try reconcile()
             switch call.tool {
             case .list:
+                let external: [AgentRoute]?
+                if call.arguments.includeExternal == true {
+                    let observed = try await observedExternal()
+                    _ = try authenticate(call.credential)
+                    guard ledger.requestsEnabled else { throw AgentToolError.readOnly }
+                    external = Dictionary(grouping: observed, by: \.route.listenAddress).values.compactMap {
+                        $0.count == 1 ? $0.first?.route : nil
+                    }.sorted { $0.listenAddress.localizedStandardCompare($1.listenAddress) == .orderedAscending }
+                } else {
+                    external = nil
+                }
                 let rules = ledger.shares.compactMap { share in
                     preparedShared(share).map { AgentToolResult.Rule(share: share, route: $0.route) }
                 }
                 let profiles = manager.store.tunnels.map(AgentToolResult.Profile.init)
-                return AgentToolResult(rules: rules, profiles: profiles, canRequest: true)
+                return AgentToolResult(rules: rules, profiles: profiles, external: external, canRequest: true)
             case .request:
-                return AgentToolResult(lease: AgentToolResult.Lease(try await request(call.arguments, credential: call.credential)))
+                return AgentToolResult(lease: AgentToolResult.Lease(try await request(call)))
             case .status, .release:
                 guard let id = call.arguments.leaseID else { throw AgentToolError.invalidArguments }
                 guard var lease = lease(id), lease.clientID == client.id else { throw AgentToolError.notFound }
@@ -237,8 +248,9 @@ final class AgentAccess {
         return !connection.runtime.isAgentOwned || connection.runtime.heldByUser
     }
 
-    private func request(_ arguments: AgentToolArguments, credential: AgentCredential) async throws -> AgentLease {
-        let (key, input) = try arguments.leaseInput()
+    private func request(_ call: AgentToolCall) async throws -> AgentLease {
+        let credential = call.credential
+        let (key, input) = try call.arguments.leaseInput()
         let client = try authenticate(credential)
         if let existing = try previousRequest(client.id, key: key, input: input) {
             if existing.state == .ready, existing.external != nil {
@@ -252,7 +264,7 @@ final class AgentAccess {
         let external: AgentExternalEvidence?
         if case .external(let address) = input.target {
             managed = nil
-            external = try await externalEvidence(at: address)
+            external = try? await externalEvidence(at: address)
             let current = try authenticate(credential)
             if let existing = try previousRequest(current.id, key: key, input: input) { return existing }
             guard ledger.requestsEnabled else { throw AgentToolError.readOnly }
@@ -260,16 +272,22 @@ final class AgentAccess {
             managed = prepared(input.target)
             external = nil
         }
-        guard let route = managed?.route ?? external?.route else {
-            if case .external = input.target { throw AgentToolError.externalGone }
-            throw AgentToolError.routeChanged
-        }
         let now = Date()
-        var lease = AgentLease(id: UUID(), clientID: client.id, clientName: client.name, requestKey: key, input: input, route: route,
+        let route = managed?.route ?? external?.route
+        var lease = AgentLease(id: UUID(), clientID: client.id, clientName: client.name,
+                               reportedClientName: reportedName(from: call, client: client),
+                               requestKey: key, input: input, route: route ?? attemptedRoute(input.target),
                                profileID: managed?.key.profileID, fingerprint: managed?.key.fingerprint, external: external,
                                state: .connecting, waitUntil: now.addingTimeInterval(120),
                                events: [.init(at: now, action: .requested, reason: nil),
                                         .init(at: now, action: .authorized, reason: nil)])
+        if route == nil {
+            let failedExternally: Bool
+            if case .external = input.target { failedExternally = true } else { failedExternally = false }
+            lease.move(to: .failed, action: .failed, at: now, reason: failedExternally ? .externalGone : .routeUnavailable)
+            try save(lease)
+            throw failedExternally ? AgentToolError.externalGone : AgentToolError.routeChanged
+        }
         if let managed {
             let existing = connections[managed.key] ?? manager.reusableRoute(managed).map {
                 Connection(runtime: $0.0, ruleID: $0.1)
@@ -286,6 +304,26 @@ final class AgentAccess {
             try save(lease)
         }
         return self.lease(lease.id) ?? lease
+    }
+
+    private func reportedName(from call: AgentToolCall, client: AgentClient) -> String? {
+        guard client.name == "Generic", let name = call.reportedClientName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty, name.utf8.count <= 120,
+              name.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        return name
+    }
+
+    private func attemptedRoute(_ target: AgentLeaseInput.Target) -> AgentRoute {
+        switch target {
+        case .external(let address):
+            return AgentRoute(name: "OpenSSH", sshHost: nil, listenAddress: address, destination: nil)
+        case .shared(let id):
+            return AgentRoute(name: id.uuidString, sshHost: nil, listenAddress: "", destination: nil)
+        case .temporary(let id, let host, let port, let bind, let listenPort):
+            let rule = Forwarding(bindAddress: bind, port: listenPort, targetHost: host, targetPort: port)
+            return AgentRoute(name: L10n.text("Temporary Forward", "临时转发"), sshHost: manager.store.tunnel(id)?.hostNotation,
+                              listenAddress: rule.listenDisplayAddress, destination: rule.targetDisplayAddress)
+        }
     }
 
     private func prepared(_ target: AgentLeaseInput.Target) -> AgentPreparedRoute? {
@@ -323,6 +361,10 @@ final class AgentAccess {
     private func previousRequest(_ id: UUID, key: String, input: AgentLeaseInput) throws -> AgentLease? {
         guard let leaseID = requestIDs[RequestKey(clientID: id, value: key)], let lease = lease(leaseID) else { return nil }
         guard lease.input == input else { throw AgentToolError.conflict }
+        if lease.state == .failed {
+            if lease.reason == .routeUnavailable { throw AgentToolError.routeChanged }
+            if lease.reason == .externalGone && lease.external == nil { throw AgentToolError.externalGone }
+        }
         return lease
     }
 
@@ -389,7 +431,12 @@ final class AgentAccess {
             }
             let runtime = connection.runtime
             if runtime.state.isFailure {
-                lease.move(to: .failed, action: .failed, at: now, reason: .sshFailed)
+                let reason: AgentLease.Reason = switch runtime.failureKind {
+                case .portInUse: .localPortInUse
+                case .authentication: .authenticationFailed
+                case nil: .sshFailed
+                }
+                lease.move(to: .failed, action: .failed, at: now, reason: reason)
             } else if !runtime.desiredOn {
                 if lease.expiresAt == nil {
                     lease.move(to: .failed, action: .failed, at: now, reason: .sshFailed)

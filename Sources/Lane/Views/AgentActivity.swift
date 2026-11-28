@@ -16,10 +16,7 @@ struct AgentActivity: View {
     private var style: LaneStyle { LaneStyle(scheme: scheme) }
     private var filteredHistory: [AgentLease] {
         guard !query.isEmpty else { return access.history }
-        return access.history.filter { lease in
-            [lease.id.uuidString, lease.clientName, lease.route.name, lease.route.listenAddress,
-             lease.input.project ?? "", lease.input.purpose].contains { $0.localizedCaseInsensitiveContains(query) }
-        }
+        return access.history.filter { $0.matchesHistory(query) }
     }
 
     var body: some View {
@@ -155,7 +152,7 @@ struct AgentActivity: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(lease.route.name).font(.callout.weight(.semibold))
-                Text(lease.clientName).font(.caption).foregroundStyle(style.secondary)
+                Text(lease.displayClientName).font(.caption).foregroundStyle(style.secondary)
             }
             Spacer()
             Text(lease.state.displayLabel).font(.caption.weight(.semibold))
@@ -167,7 +164,8 @@ struct AgentActivity: View {
 
     private func metadata(_ lease: AgentLease) -> some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 10, verticalSpacing: 5) {
-            routeRow(L10n.text("Entry on this Mac", "本机入口"), lease.route.listenAddress)
+            routeRow(L10n.text("Entry on this Mac", "本机入口"),
+                     lease.route.listenAddress.isEmpty ? L10n.text("Unknown", "未知") : lease.route.listenAddress)
             routeRow(L10n.text("SSH host", "SSH 主机"), lease.route.sshHost ?? L10n.text("Unknown", "未知"))
             routeRow(L10n.text("Destination from SSH host", "SSH 主机访问的目标"),
                      lease.route.destination ?? L10n.text("Unknown", "未知"))
@@ -253,7 +251,11 @@ private extension AgentLease.Reason {
         case .accessDisabled: L10n.text("Agent access turned off", "Agent 接入已关闭")
         case .clientRevoked: L10n.text("Pairing revoked", "配对已撤销")
         case .routeChanged: L10n.text("Shared rule or SSH profile changed", "共享规则或 SSH 配置已变更")
-        case .externalGone: L10n.text("External listener disappeared", "外部监听已消失")
+        case .routeUnavailable: L10n.text("Rule or SSH profile unavailable. Select a current route.", "规则或 SSH 配置不可用，请重新选择。")
+        case .externalGone: L10n.text("External listener unavailable. Check the SSH process.", "外部监听不可用，请检查 SSH 进程。")
+        case .localPortInUse: L10n.text("Local port in use. Free it or choose another one.", "本机端口已占用，请释放该端口或换一个端口。")
+        case .authenticationFailed: L10n.text("SSH authentication failed. Check the key or login credentials.",
+                                              "SSH 认证失败，请检查密钥或登录凭据。")
         case .sshFailed: L10n.text("SSH could not start or maintain the forwarding", "SSH 未能建立或维持转发")
         case .startupTimedOut: L10n.text("SSH startup timed out", "SSH 启动超时")
         case .approvalTimedOut: L10n.text("Approval timed out", "等待审批超时")
