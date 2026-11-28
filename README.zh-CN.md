@@ -51,7 +51,7 @@ make run
 
 ## Agent MCP
 
-打开「设置 → Agent 接入」，开启总开关后复制 **Codex**、**Claude Code** 的命令，或复制「通用 MCP」配置。通用方式提供 `mcpServers` JSON，也可以分别复制 `command` 和 `args`，填写到支持本机 stdio 的客户端。
+打开「设置 → Agent 接入」，开启总开关后复制并运行 **Codex** 或 **Claude Code** 的命令。其他支持本机 stdio 的客户端可以使用「通用 MCP」复制完整 JSON 配置。
 
 Agent 接入默认关闭。开启后，Agent 可申请使用符合条件的已保存本机环回转发；临时目标和外部入口仍需在 Lane 审批。关闭开关会结束 Agent 的申请。[接入与工具说明](docs/06-agent-mcp.md)
 

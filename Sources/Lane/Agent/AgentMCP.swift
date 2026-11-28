@@ -147,7 +147,7 @@ enum AgentMCP {
     }
 }
 
-/// Every client-specific recipe and the generic fields are generated from the same launch vector.
+/// The client commands and generic configuration share the same launch arguments.
 struct AgentMCPConfiguration: Sendable {
     let executable: String
     let credentialFile: String
@@ -155,7 +155,6 @@ struct AgentMCPConfiguration: Sendable {
     var args: [String] { [AgentMCP.mode, AgentMCP.credentialOption, credentialFile] }
     var codexCommand: String { "codex mcp add \(AgentMCP.name) -- \(shellCommand)" }
     var claudeCommand: String { "claude mcp add --transport stdio --scope user \(AgentMCP.name) -- \(shellCommand)" }
-    var argsJSON: String { Self.json(args) }
     var json: String { Self.json(["mcpServers": [AgentMCP.name: ["command": executable, "args": args]]]) }
     var cursorJSON: String {
         Self.json(["mcpServers": [AgentMCP.name: ["type": "stdio", "command": executable, "args": args]]])

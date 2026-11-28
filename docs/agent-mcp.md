@@ -14,7 +14,7 @@ While access is on, Agents can request any eligible saved loopback `-L` rule. Te
 
 ### Generic stdio setup
 
-Merge the generated entry into the client's `mcpServers` object. Lane fills the absolute paths for the installation and local client identity. Open **Manual MCP fields** to copy `command` and `args` separately.
+Choose **Copy Configuration** next to **Generic MCP** and merge the `lane` entry into the client's `mcpServers` object. Lane fills in the absolute paths to its executable and the local pairing file.
 
 ```json
 {
@@ -27,12 +27,7 @@ Merge the generated entry into the client's `mcpServers` object. Lane fills the 
 }
 ```
 
-| Field | Value |
-| --- | --- |
-| Transport | `stdio` |
-| `command` | The absolute executable path from Lane |
-| `args` | `--mcp-stdio`, `--credential-file`, then the absolute pairing file path |
-| `env` | Empty when passing `--credential-file`. Alternatively, pass just `--mcp-stdio` and set `LANE_MCP_CREDENTIAL_FILE` to the pairing file path. |
+To supply the pairing path through the environment, set `LANE_MCP_CREDENTIAL_FILE` and pass only `--mcp-stdio` in `args`.
 
 Keep Lane running under the same macOS account as the client. Copy the recipe again after moving or renaming the app. The recipe points at a private pairing file. Any same-account process that can read that file can use the pairing.
 

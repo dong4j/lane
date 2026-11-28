@@ -51,7 +51,7 @@ In Lane, choose **New Tunnel**, enter an SSH alias or hostname, and add a forwar
 
 ## Agent MCP
 
-Open **Settings → Agent**, turn on **Allow Agent access**, and copy the **Codex**, **Claude Code**, or **Generic MCP** setup. Generic includes both a `mcpServers` JSON entry and individual `command` and `args` fields for local stdio clients.
+Open **Settings → Agent** and turn on **Allow Agent access**. Copy and run the command for **Codex** or **Claude Code**, or copy the **Generic MCP** JSON configuration for another local stdio client.
 
 Agent Access is off by default. When enabled, Agents can request eligible saved loopback local forwards; temporary destinations and existing external forwards require approval in Lane. Turning it off ends Agent leases. [Setup and tool reference](docs/agent-mcp.md)
 
