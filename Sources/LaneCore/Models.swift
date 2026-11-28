@@ -486,6 +486,10 @@ public struct SmartGroup: Codable, Identifiable, Hashable, Sendable {
 public struct PortholeDocument: Codable, Sendable {
     public static let currentVersion = 1
 
+    public struct UnsupportedVersion: Error {
+        public let version: Int
+    }
+
     public var version: Int
     public var tunnels: [Tunnel]
     public var smartGroups: [SmartGroup]
@@ -501,7 +505,8 @@ public struct PortholeDocument: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
-        tunnels = try c.decodeIfPresent([Tunnel].self, forKey: .tunnels) ?? []
+        guard version == Self.currentVersion else { throw UnsupportedVersion(version: version) }
+        tunnels = try c.decode([Tunnel].self, forKey: .tunnels)
         smartGroups = try c.decodeIfPresent([SmartGroup].self, forKey: .smartGroups) ?? []
     }
 

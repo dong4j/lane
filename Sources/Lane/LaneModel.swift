@@ -15,7 +15,7 @@ final class LaneModel {
         var addRule = false
     }
 
-    enum ImportKind { case sshConfig, backup, codinn }
+    enum ImportKind { case sshConfig, backup, codinn, restore }
 
     struct ImportPreview: Identifiable {
         let id = UUID()
@@ -23,6 +23,11 @@ final class LaneModel {
         let source: String
         let tunnels: [Tunnel]
         let skippedCount: Int
+        var ignoredOptions: [String] = []
+        var removedNames: [String] = []
+        var smartGroups: [SmartGroup] = []
+        var configSources: [UUID: String] = [:]
+        var configWarnings: [String] = []
     }
 
     let preferences: LanePreferences
@@ -158,29 +163,92 @@ final class LaneModel {
         }
     }
 
-    func sshConfigImport() throws -> ImportPreview {
-        let file = URL.homeDirectory.appending(path: ".ssh/config")
-        guard let content = try? String(contentsOf: file, encoding: .utf8) else {
+    func sshConfigImport(from file: URL = URL.homeDirectory.appending(path: ".ssh/config")) throws -> ImportPreview {
+        guard let parsed = try? SSHConfigImporter.preview(file: file) else {
             throw CocoaError(.fileReadUnknown, userInfo: [
                 NSLocalizedDescriptionKey: L10n.text("Could not read ~/.ssh/config.", "无法读取 ~/.ssh/config。")
             ])
         }
-        let candidates = SSHConfigImporter.tunnels(fromConfig: content).map {
+        let candidates = parsed.tunnels.map {
             // Leave identity, user, port and jump host resolution to the original SSH alias.
-            Tunnel(name: $0.name, note: $0.note, host: $0.host, forwardings: $0.forwardings)
+            Tunnel(id: $0.id, name: $0.name, note: $0.note, host: $0.host, forwardings: $0.forwardings)
         }
-        return try makeImportPreview(candidates, kind: .sshConfig, source: "~/.ssh/config")
+        var preview = try makeImportPreview(candidates, kind: .sshConfig, source: (file.path as NSString).abbreviatingWithTildeInPath,
+                                            allowEmpty: true)
+        preview.configSources = parsed.sources.mapValues { ($0.path as NSString).abbreviatingWithTildeInPath }
+        preview.configWarnings = parsed.notices.map { notice in
+            switch notice {
+            case .noFiles(let path):
+                L10n.text("No files matched Include \(path).", "Include \(path) 未匹配到文件。")
+            case .unreadable(let path):
+                L10n.text("Could not read included file \(path).", "无法读取包含文件 \(path)。")
+            case .includeCycle(let path):
+                L10n.text("Skipped a circular or deeply nested Include in \(path).", "已跳过 \(path) 中循环或嵌套过深的 Include。")
+            case .dynamicInclude(let path):
+                L10n.text("Skipped Include \(path), which uses runtime expansion.", "已跳过使用运行时展开的 Include \(path)。")
+            case .matchBlock(let path):
+                L10n.text("Match conditions were skipped in \(path).", "已跳过 \(path) 中的 Match 条件。")
+            }
+        }
+        if preview.tunnels.isEmpty {
+            preview.configWarnings.append(L10n.text("No new, valid forwards were found.", "没有找到可导入的新转发。"))
+        }
+        return preview
     }
 
     /// Prefer the document format when it contains tunnel records. Codinn exports may also be JSON objects.
-    func backupImport(from file: URL) throws -> ImportPreview {
+    func backupImport(from file: URL, restoring: Bool = false) throws -> ImportPreview {
         let data = try Data(contentsOf: file)
-        if let document = try? PortholeDocument.decoder().decode(PortholeDocument.self, from: data),
-           document.tunnels.contains(where: { !$0.host.isEmpty }) {
-            return try makeImportPreview(document.tunnels, kind: .backup, source: file.lastPathComponent)
+        let document: PortholeDocument?
+        do {
+            document = try PortholeDocument.decoder().decode(PortholeDocument.self, from: data)
+        } catch let error as PortholeDocument.UnsupportedVersion {
+            throw CocoaError(.fileReadCorruptFile, userInfo: [
+                NSLocalizedDescriptionKey: TunnelStore.versionMessage(error.version)
+            ])
+        } catch {
+            document = nil
         }
+        if let document, restoring || document.tunnels.contains(where: { !$0.host.isEmpty }) {
+            var ignored: Set<String> = []
+            let safe = document.tunnels.map { tunnel in
+                var tunnel = tunnel
+                let options = SSHCommandBuilder.backupOptions(tunnel.extraOptions)
+                tunnel.extraOptions = options.allowed
+                ignored.formUnion(options.ignored)
+                return tunnel
+            }
+            var preview = try makeImportPreview(safe, kind: restoring ? .restore : .backup, source: file.lastPathComponent)
+            preview.ignoredOptions = ignored.sorted()
+            if restoring {
+                let incoming = Set(safe.map(\.id))
+                preview.removedNames = store.tunnels.filter { !incoming.contains($0.id) }.map(\.displayName)
+                preview.smartGroups = document.smartGroups
+            }
+            return preview
+        }
+        guard !restoring else { throw invalidBackup() }
         let candidates = try LegacySSHTunnelImporter.tunnels(from: data)
         return try makeImportPreview(candidates, kind: .codinn, source: file.lastPathComponent)
+    }
+
+    /// Reload active connections only after the restored library has reached disk.
+    func restoreBackup(_ preview: ImportPreview) throws -> URL? {
+        guard preview.kind == .restore else { throw invalidBackup() }
+        let previous = store.tunnels
+        let preserved = try store.restore(preview.tunnels, smartGroups: preview.smartGroups)
+        agents.libraryChanged()
+        for old in previous {
+            if let restored = store.tunnel(old.id) {
+                manager.tunnelDidChange(restored, previous: old)
+            } else {
+                manager.disconnect(old.id)
+            }
+        }
+        query = ""
+        pickAvailableSelection()
+        refreshDiscovery()
+        return preserved
     }
 
     /// Check for duplicates again when committing, since the library can change while a preview is open.
@@ -194,8 +262,9 @@ final class LaneModel {
         return fresh.count
     }
 
-    private func makeImportPreview(_ candidates: [Tunnel], kind: ImportKind, source: String) throws -> ImportPreview {
-        var ids = Set(store.tunnels.map(\.id))
+    private func makeImportPreview(_ candidates: [Tunnel], kind: ImportKind, source: String,
+                                   allowEmpty: Bool = false) throws -> ImportPreview {
+        var ids = kind == .restore ? Set<UUID>() : Set(store.tunnels.map(\.id))
         var aliases = Set(store.tunnels.map { $0.host.lowercased() })
         let builder = SSHCommandBuilder()
         func codinnKey(_ tunnel: Tunnel) -> [String] { [tunnel.name] + builder.arguments(for: tunnel) }
@@ -210,17 +279,25 @@ final class LaneModel {
             case .codinn:
                 // Codinn records are given new IDs on parse, so compare their names and connection parameters.
                 guard codinnKeys.insert(codinnKey(tunnel)).inserted else { return false }
-            case .backup:
+            case .backup, .restore:
                 break
             }
             return ids.insert(tunnel.id).inserted
         }
-        guard !fresh.isEmpty else {
+        if kind == .restore, fresh.count != candidates.count { throw invalidBackup() }
+        guard kind == .restore || allowEmpty || !fresh.isEmpty else {
             throw CocoaError(.fileReadUnknown, userInfo: [
                 NSLocalizedDescriptionKey: L10n.text("No new, valid tunnels were found.", "没有找到可导入的新隧道。")
             ])
         }
         return ImportPreview(kind: kind, source: source, tunnels: fresh, skippedCount: candidates.count - fresh.count)
+    }
+
+    private func invalidBackup() -> CocoaError {
+        CocoaError(.fileReadCorruptFile, userInfo: [
+            NSLocalizedDescriptionKey: L10n.text("Choose a complete Lane or Porthole backup with valid tunnels.",
+                                                 "请选择隧道配置有效的完整 Lane 或 Porthole 备份。")
+        ])
     }
 
     private func configureDemo() {

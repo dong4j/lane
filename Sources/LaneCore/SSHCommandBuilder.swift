@@ -230,6 +230,27 @@ public struct SSHCommandBuilder: Sendable {
         }
     }
 
+    /// A backup can supply connection settings. Local commands and program/provider paths require local configuration.
+    public static func backupOptions(_ text: String) -> (allowed: String, ignored: Set<String>) {
+        let supported: Set<String> = [
+            "addressfamily", "checkhostip", "ciphers", "compression", "connectionattempts", "connecttimeout",
+            "gatewayports", "hostkeyalgorithms", "identitiesonly", "identityfile", "kexalgorithms", "macs",
+            "preferredauthentications", "pubkeyacceptedalgorithms", "rekeylimit", "serveralivecountmax",
+            "serveraliveinterval", "stricthostkeychecking"
+        ]
+        var allowed: [String] = []
+        var ignored: Set<String> = []
+        for option in parseExtraOptions(text) {
+            let key = String(option.prefix { $0 != "=" })
+            if supported.contains(key.lowercased()) {
+                allowed.append(option)
+            } else {
+                ignored.insert(key.lowercased())
+            }
+        }
+        return (allowed.joined(separator: "\n"), ignored)
+    }
+
     public static func shellQuote(_ s: String) -> String {
         if s.isEmpty { return "''" }
         let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./-_")

@@ -19,9 +19,10 @@ struct DataSettings: View {
                     }
                 }
                 LabeledContent(L10n.text("Lane, Porthole or Codinn", "Lane、Porthole 或 Codinn")) {
-                    SettingsActionButton(L10n.text("Choose File…", "选择文件…"), action: chooseBackup)
+                    SettingsActionButton(L10n.text("Merge File…", "合并文件…")) { chooseBackup(restoring: false) }
                 }
             }
+            .disabled(model.store.loadError != nil)
 
             Section {
                 LabeledContent(L10n.text("Tunnel configurations", "隧道配置")) {
@@ -34,6 +35,16 @@ struct DataSettings: View {
                                "备份包含隧道与转发规则。已保存的密码和口令留在钥匙串。"))
                     .font(.caption).foregroundStyle(LaneStyle(scheme: scheme).secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Section(L10n.text("Restore", "恢复")) {
+                LabeledContent(L10n.text("Lane or Porthole backup", "Lane 或 Porthole 备份")) {
+                    SettingsActionButton(L10n.text("Restore Backup…", "从备份恢复…")) { chooseBackup(restoring: true) }
+                        .disabled(!model.store.canRestore)
+                }
+                if let loadError = model.store.loadError {
+                    Text(loadError).font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             if let fileURL = model.store.fileURL {
@@ -57,8 +68,16 @@ struct DataSettings: View {
         }
         .sheet(item: $preview) { preview in
             ImportSheet(preview: preview) { tunnels in
-                let count = try model.importSelected(tunnels, kind: preview.kind)
-                feedback = L10n.text("Imported \(count) tunnels.", "已导入 \(count) 条隧道。")
+                if preview.kind == .restore {
+                    let preserved = try model.restoreBackup(preview)
+                    feedback = preserved.map {
+                        L10n.text("Restored. Previous file: \($0.lastPathComponent)",
+                                  "已恢复。原文件：\($0.lastPathComponent)")
+                    } ?? L10n.text("Restored tunnel library.", "已恢复隧道库。")
+                } else {
+                    let count = try model.importSelected(tunnels, kind: preview.kind)
+                    feedback = L10n.text("Imported \(count) tunnels.", "已导入 \(count) 条隧道。")
+                }
             }
         }
         .alert("Lane", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -69,12 +88,12 @@ struct DataSettings: View {
     }
 
     /// Selecting a file reads it into a preview first. The library is written only from the preview.
-    private func chooseBackup() {
+    private func chooseBackup(restoring: Bool) {
         let panel = NSOpenPanel()
-        panel.title = L10n.text("Import Tunnels", "导入隧道")
+        panel.title = restoring ? L10n.text("Restore Backup", "从备份恢复") : L10n.text("Import Tunnels", "导入隧道")
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let file = panel.url else { return }
-        finish { preview = try model.backupImport(from: file) }
+        finish { preview = try model.backupImport(from: file, restoring: restoring) }
     }
 
     private func exportBackup() {

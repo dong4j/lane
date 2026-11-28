@@ -17,31 +17,42 @@ struct ImportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(L10n.text("Import Tunnels", "导入隧道")).font(.title2.weight(.semibold))
+            Text(preview.kind == .restore ? L10n.text("Restore Backup", "从备份恢复") :
+                    L10n.text("Import Tunnels", "导入隧道")).font(.title2.weight(.semibold))
             Text(preview.source).font(.system(.callout, design: .monospaced)).foregroundStyle(.secondary)
                 .lineLimit(1).truncationMode(.middle)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(preview.tunnels) { tunnel in
-                        Toggle(isOn: Binding(
-                            get: { selected.contains(tunnel.id) },
-                            set: { value in if value { selected.insert(tunnel.id) } else { selected.remove(tunnel.id) } }
-                        )) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(tunnel.displayName).fontWeight(.semibold)
-                                if tunnel.displayName != tunnel.hostNotation {
-                                    Text(tunnel.hostNotation).font(.caption.monospaced()).foregroundStyle(.secondary)
-                                }
-                                ForEach(tunnel.forwardings) { rule in
-                                    Text(rule.commandString).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                                }
-                                if tunnel.autoConnect {
-                                    Text(L10n.text("Connects when Lane opens", "启动 Lane 时连接"))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
+                    if preview.kind == .restore {
+                        Text(L10n.text("Replace the library with \(preview.tunnels.count) tunnels. A copy of the current file is kept beside it.",
+                                       "将用备份中的 \(preview.tunnels.count) 条隧道替换当前库，原文件会保存在同一目录。"))
+                        if !preview.removedNames.isEmpty {
+                            Text(L10n.text("Removed from the library", "将从当前库移除"))
+                                .font(.subheadline.weight(.semibold))
+                            ForEach(Array(preview.removedNames.enumerated()), id: \.offset) { _, name in
+                                Text(name).font(.caption)
                             }
                         }
-                        .toggleStyle(.checkbox)
+                    }
+                    if !preview.ignoredOptions.isEmpty {
+                        Text(L10n.text("Ignored extra SSH options", "已忽略的额外 SSH 选项"))
+                            .font(.caption.weight(.semibold))
+                        Text(preview.ignoredOptions.joined(separator: ", "))
+                            .font(.caption.monospaced()).foregroundStyle(.secondary)
+                    }
+                    ForEach(preview.configWarnings, id: \.self) { warning in
+                        Text(warning).font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(preview.tunnels) { tunnel in
+                        if preview.kind == .restore {
+                            details(tunnel)
+                        } else {
+                            Toggle(isOn: Binding(
+                                get: { selected.contains(tunnel.id) },
+                                set: { value in if value { selected.insert(tunnel.id) } else { selected.remove(tunnel.id) } }
+                            )) { details(tunnel) }
+                                .toggleStyle(.checkbox)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -58,7 +69,8 @@ struct ImportSheet: View {
                 Spacer()
                 Button(L10n.text("Cancel", "取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction).buttonStyle(LaneButtonStyle())
-                Button(L10n.text("Import Selected", "导入所选")) {
+                Button(preview.kind == .restore ? L10n.text("Restore Library", "恢复隧道库") :
+                           L10n.text("Import Selected", "导入所选")) {
                     do {
                         try onImport(preview.tunnels.filter { selected.contains($0.id) })
                         dismiss()
@@ -66,13 +78,32 @@ struct ImportSheet: View {
                         self.error = error.localizedDescription
                     }
                 }
-                .keyboardShortcut(.defaultAction)
+                .keyboardShortcut(preview.kind == .restore ? nil : .defaultAction)
                 .buttonStyle(LaneButtonStyle(kind: .primary))
-                .disabled(selected.isEmpty)
+                .disabled(preview.kind != .restore && selected.isEmpty)
             }
         }
         .padding(22)
         .frame(width: 510, height: 390)
+    }
+
+    private func details(_ tunnel: Tunnel) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(tunnel.displayName).fontWeight(.semibold)
+            if tunnel.displayName != tunnel.hostNotation {
+                Text(tunnel.hostNotation).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
+            if let source = preview.configSources[tunnel.id] {
+                Text(source).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
+            ForEach(tunnel.forwardings) { rule in
+                Text(rule.commandString).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
+            if tunnel.autoConnect {
+                Text(L10n.text("Connects when Lane opens", "启动 Lane 时连接"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 }
 

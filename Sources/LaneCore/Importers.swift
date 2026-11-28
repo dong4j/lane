@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 // MARK: - ~/.ssh/config
@@ -7,9 +8,11 @@ public enum SSHConfigImporter {
     public struct Entry: Equatable, Sendable {
         public var alias: String
         public var options: [(String, String)]
+        public var source: URL?
 
         public static func == (a: Entry, b: Entry) -> Bool {
-            a.alias == b.alias && a.options.map { "\($0.0)=\($0.1)" } == b.options.map { "\($0.0)=\($0.1)" }
+            a.alias == b.alias && a.source == b.source &&
+                a.options.map { "\($0.0)=\($0.1)" } == b.options.map { "\($0.0)=\($0.1)" }
         }
 
         func values(_ key: String) -> [String] {
@@ -19,64 +22,175 @@ public enum SSHConfigImporter {
         func value(_ key: String) -> String? { values(key).first }
     }
 
+    public enum Notice: Hashable, Sendable {
+        case noFiles(String), unreadable(String), includeCycle(String), dynamicInclude(String), matchBlock(String)
+    }
+
+    public struct Preview: Sendable {
+        public let tunnels: [Tunnel]
+        public let sources: [UUID: URL]
+        public let notices: [Notice]
+    }
+
+    private struct Directive {
+        let key: String
+        let value: String
+        let source: URL?
+        var includes: [[Directive]] = []
+    }
+
     public static func parse(_ text: String) -> [Entry] {
-        var entries: [Entry] = []
-        var current: Entry?
-        for raw in text.components(separatedBy: .newlines) {
+        entries(from: directives(text, source: nil))
+    }
+
+    /// Resolve relative includes from the user's config directory and keep each included file's Host scope local.
+    public static func preview(file: URL) throws -> Preview {
+        var notices: [Notice] = []
+        let lines = try read(file, relativeTo: file.deletingLastPathComponent(), ancestry: [], notices: &notices)
+        let rows = entries(from: lines).compactMap { entry -> (Tunnel, URL?)? in
+            tunnel(from: entry).map { ($0, entry.source) }
+        }
+        var sources: [UUID: URL] = [:]
+        for (tunnel, source) in rows { sources[tunnel.id] = source }
+        var seen: Set<Notice> = []
+        return Preview(tunnels: rows.map(\.0), sources: sources, notices: notices.filter { seen.insert($0).inserted })
+    }
+
+    private static func read(_ url: URL, relativeTo root: URL, ancestry: [URL], notices: inout [Notice]) throws -> [Directive] {
+        let file = url.resolvingSymlinksInPath().standardizedFileURL
+        guard ancestry.count < 16, !ancestry.contains(file) else {
+            notices.append(.includeCycle(url.path))
+            return []
+        }
+        guard try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
+            throw CocoaError(.fileReadUnsupportedScheme)
+        }
+        var inMatch = false
+        return try directives(String(contentsOf: file, encoding: .utf8), source: url).map { line in
+            var line = line
+            if line.key == "match" {
+                notices.append(.matchBlock(url.path))
+                inMatch = true
+            }
+            if line.key == "host" { inMatch = false }
+            if line.key == "include", !inMatch {
+                for word in words(line.value) {
+                    if word.contains("%") || word.contains("${") {
+                        notices.append(.dynamicInclude(word))
+                        continue
+                    }
+                    let expanded = (word as NSString).expandingTildeInPath
+                    let pattern = expanded.hasPrefix("/") ? expanded : root.appending(path: expanded).path
+                    let paths = matchingPaths(pattern)
+                    if paths.isEmpty { notices.append(.noFiles(word)) }
+                    for path in paths {
+                        do {
+                            let included = try read(URL(fileURLWithPath: path), relativeTo: root,
+                                                    ancestry: ancestry + [file], notices: &notices)
+                            line.includes.append(included)
+                        } catch {
+                            notices.append(.unreadable(path))
+                        }
+                    }
+                }
+            }
+            return line
+        }
+    }
+
+    private static func matchingPaths(_ pattern: String) -> [String] {
+        var matches = glob_t()
+        defer { globfree(&matches) }
+        guard glob(pattern, 0, nil, &matches) == 0, let paths = matches.gl_pathv else { return [] }
+        return (0..<Int(matches.gl_pathc)).compactMap { paths[$0].map { String(cString: $0) } }
+    }
+
+    private static func directives(_ text: String, source: URL?) -> [Directive] {
+        text.split(whereSeparator: \.isNewline).compactMap { raw in
             let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.isEmpty || line.hasPrefix("#") { continue }
+            guard !line.isEmpty, !line.hasPrefix("#") else { return nil }
             let (key, value) = splitKeyValue(line)
-            guard !key.isEmpty else { continue }
-            switch key.lowercased() {
+            return Directive(key: key.lowercased(), value: value, source: source)
+        }
+    }
+
+    private static func aliases(in lines: [Directive]) -> [String] {
+        lines.flatMap { line in
+            if line.key == "include" { return line.includes.flatMap(aliases(in:)) }
+            guard line.key == "host" else { return [] }
+            return words(line.value).filter { !$0.contains("*") && !$0.contains("?") && !$0.hasPrefix("!") }
+        }
+    }
+
+    private static func entries(from lines: [Directive]) -> [Entry] {
+        var seen: Set<String> = []
+        return aliases(in: lines).filter { seen.insert($0).inserted }.compactMap { alias in
+            var entry = Entry(alias: alias, options: [], source: nil)
+            return collect(lines, into: &entry) ? entry : nil
+        }
+    }
+
+    private static func collect(_ lines: [Directive], into entry: inout Entry) -> Bool {
+        var active = true
+        var explicit = false
+        for line in lines {
+            switch line.key {
             case "host":
-                if let c = current { entries.append(c) }
-                // Only plain aliases become tunnels; patterns like `*` or `!foo` are skipped.
-                let aliases = value.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-                let plain = aliases.first { !$0.contains("*") && !$0.contains("?") && !$0.hasPrefix("!") }
-                current = plain.map { Entry(alias: $0, options: []) }
+                let patterns = words(line.value)
+                let matches = patterns.filter { pattern in
+                    let candidate = pattern.hasPrefix("!") ? String(pattern.dropFirst()) : pattern
+                    return fnmatch(candidate, entry.alias, 0) == 0
+                }
+                active = !matches.isEmpty && !matches.contains { $0.hasPrefix("!") }
+                if active, matches.contains(entry.alias) {
+                    explicit = true
+                    if entry.source == nil { entry.source = line.source }
+                }
             case "match":
-                if let c = current { entries.append(c) }
-                current = nil
+                active = false
+            case "include" where active:
+                for file in line.includes {
+                    if collect(file, into: &entry) { explicit = true }
+                }
+            case "include":
+                break
             default:
-                current?.options.append((key, value))
+                if active { entry.options.append((line.key, line.value)) }
             }
         }
-        if let c = current { entries.append(c) }
-        return entries
+        return explicit
     }
 
     /// Tunnels for every host block that has at least one forwarding.
     public static func tunnels(fromConfig text: String) -> [Tunnel] {
-        parse(text).compactMap { entry in
-            var forwards: [Forwarding] = []
-            for v in entry.values("LocalForward") {
-                if let f = parseForward(v, kind: .local) { forwards.append(f) }
-            }
-            for v in entry.values("RemoteForward") {
-                if let f = parseForward(v, kind: .remote) { forwards.append(f) }
-            }
-            for v in entry.values("DynamicForward") {
-                if let f = parseForward(v, kind: .dynamic) { forwards.append(f) }
-            }
-            guard !forwards.isEmpty else { return nil }
+        parse(text).compactMap(tunnel(from:))
+    }
 
-            var t = Tunnel(name: entry.alias, host: entry.alias)
-            // Keep `host` as the alias so ssh picks up every option from the config itself.
-            t.useSSHConfig = true
-            t.port = entry.value("Port").flatMap(Int.init) ?? 22
-            t.user = entry.value("User") ?? ""
-            if let identity = entry.value("IdentityFile") {
-                t.identityFile = identity
-                t.authMethod = .publicKey
+    private static func tunnel(from entry: Entry) -> Tunnel? {
+        var forwards: [Forwarding] = []
+        for (key, kind) in [("LocalForward", ForwardingKind.local), ("RemoteForward", .remote), ("DynamicForward", .dynamic)] {
+            for value in entry.values(key) {
+                guard let rule = parseForward(value, kind: kind),
+                      !forwards.contains(where: { $0.kind == kind && $0.sshSpec == rule.sshSpec }) else { continue }
+                forwards.append(rule)
             }
-            if let real = entry.value("HostName") {
-                t.note = String(localized: "Imported from ~/.ssh/config (\(real))")
-            } else {
-                t.note = String(localized: "Imported from ~/.ssh/config")
-            }
-            t.forwardings = forwards
-            return t
         }
+        guard !forwards.isEmpty else { return nil }
+        var tunnel = Tunnel(name: entry.alias, host: entry.alias)
+        tunnel.useSSHConfig = true
+        tunnel.port = entry.value("Port").flatMap { words($0).first }.flatMap(Int.init) ?? 22
+        tunnel.user = entry.value("User").flatMap { words($0).first } ?? ""
+        if let identity = entry.value("IdentityFile").flatMap({ words($0).first }) {
+            tunnel.identityFile = identity
+            tunnel.authMethod = .publicKey
+        }
+        if let real = entry.value("HostName").flatMap({ words($0).first }) {
+            tunnel.note = String(localized: "Imported from ~/.ssh/config (\(real))")
+        } else {
+            tunnel.note = String(localized: "Imported from ~/.ssh/config")
+        }
+        tunnel.forwardings = forwards
+        return tunnel
     }
 
     static func splitKeyValue(_ line: String) -> (String, String) {
@@ -91,13 +205,40 @@ public enum SSHConfigImporter {
         }
         var value = rest.trimmingCharacters(in: .whitespaces)
         if value.hasPrefix("=") { value = String(value.dropFirst()).trimmingCharacters(in: .whitespaces) }
-        if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 { value = String(value.dropFirst().dropLast()) }
         return (key, value)
+    }
+
+    /// Tokenize paths and aliases without shell evaluation.
+    private static func words(_ value: String) -> [String] {
+        var words: [String] = []
+        var word = ""
+        var quote: Character?
+        var escaped = false
+        for character in value {
+            if escaped {
+                word.append(character)
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else if let current = quote {
+                if character == current { quote = nil } else { word.append(character) }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character.isWhitespace {
+                if !word.isEmpty { words.append(word); word = "" }
+            } else if character == "#", word.isEmpty {
+                break
+            } else {
+                word.append(character)
+            }
+        }
+        if !word.isEmpty { words.append(word) }
+        return words
     }
 
     /// Parses `[bind:]port host:hostport` (Local/Remote) or `[bind:]port` (Dynamic).
     public static func parseForward(_ value: String, kind: ForwardingKind) -> Forwarding? {
-        let parts = value.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let parts = words(value)
         guard let listen = parts.first else { return nil }
         let (bind, portString) = splitHostPort(listen, portOnlyAllowed: true)
         guard let port = Int(portString) else { return nil }

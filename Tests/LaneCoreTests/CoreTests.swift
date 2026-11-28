@@ -385,7 +385,7 @@ import Testing
           HostName example.com
         """
         let tunnels = SSHConfigImporter.tunnels(fromConfig: config)
-        #expect(tunnels.count == 1)
+        #expect(tunnels.map(\.host) == ["prod-db", "prod"])
         let t = tunnels[0]
         #expect(t.name == "prod-db")
         #expect(t.host == "prod-db")

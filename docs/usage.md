@@ -24,7 +24,7 @@ The menu bar can connect and disconnect saved profiles, copy individual addresse
 
 ## Import, export, and preferences
 
-Under **Settings → Data**, preview aliases with explicit forwarding rules from `~/.ssh/config` or import a supported backup. Select the entries you want to add. Export writes a configuration document. Credentials stay in Keychain.
+Under **Settings → Data**, preview explicit SSH aliases and their local `Include` files, or use **Merge File** to add selected entries from a supported backup. The preview lists skipped files and ignored extra SSH options when applicable. **Restore Backup** replaces the library, including matching entries, and saves a copy of the previous file beside it. The same restore action is available for an unreadable library. A library in a newer format stays read-only until opened in a compatible Lane version. Credentials stay in Keychain.
 
 **General** includes appearance, language, menu bar and Dock visibility, launch at login, and notifications. Language changes take effect after restarting Lane. **Connection** includes wake behavior and a custom OpenSSH executable. Configure automatic connection separately for each profile in its editor.
 
