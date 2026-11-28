@@ -81,7 +81,7 @@ struct FullLogSheet: View {
     let tunnel: Tunnel
     let model: LaneModel
     @Environment(\.dismiss) private var dismiss
-    private var logs: [LogEntry] { model.manager.runtimes[tunnel.id]?.logs ?? [] }
+    private var logs: [LogEntry] { model.manager.displayRuntime(tunnel.id)?.logs ?? [] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

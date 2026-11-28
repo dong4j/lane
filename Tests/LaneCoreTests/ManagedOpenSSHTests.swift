@@ -272,6 +272,34 @@ struct ManagedOpenSSHTests {
         #expect(try await call(first, .release, temporaryLookup).lease?.state == .released)
         try await waitFor { temporaryRuntime.state == .off }
 
+        // Exercise both ownership orders against the actual listeners.
+        var holdArgs = arguments
+        holdArgs.idempotencyKey = "agent-first"
+        let agentFirst = try #require(try await call(first, .request, holdArgs).lease)
+        try await waitFor { manager.ruleStatus(rule, in: profile) == .active }
+        #expect(manager.state(profile.id) == .connected)
+        #expect(manager.ruleStatus(sibling, in: profile) == .idle)
+        let agentPID = try #require(manager.runningPIDs.first)
+        manager.connect(profile.id)
+        try await waitFor { manager.ruleStatus(sibling, in: profile) == .active }
+        #expect(try ExternalScanner.listeners(pids: Array(manager.runningPIDs)).filter { $0.port == fixture.localPort }.map(\.pid) == [agentPID])
+        _ = try await call(first, .release, AgentToolArguments(leaseID: agentFirst.id))
+        #expect(manager.ruleStatus(rule, in: profile) == .active)
+        #expect(manager.runningPIDs.contains(agentPID))
+        manager.disconnect(profile.id)
+        try await waitFor { manager.runningPIDs.isEmpty }
+
+        manager.connect(profile.id)
+        try await waitFor { manager.ruleStatus(sibling, in: profile) == .active }
+        holdArgs.idempotencyKey = "manual-first"
+        let manualFirst = try #require(try await call(first, .request, holdArgs).lease)
+        #expect(manualFirst.state == .ready)
+        #expect(manager.runningPIDs.count == 1)
+        _ = try await call(first, .release, AgentToolArguments(leaseID: manualFirst.id))
+        #expect(manager.ruleStatus(rule, in: profile) == .active)
+        manager.disconnect(profile.id)
+        try await waitFor { manager.runningPIDs.isEmpty }
+
         temporaryArgs.idempotencyKey = "conflict"
         temporaryArgs.listenPort = fixture.externalPorts[0]
         temporaryArgs.purpose = "Verify port conflict audit"

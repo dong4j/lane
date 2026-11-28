@@ -7,11 +7,16 @@ import LaneCore
 @MainActor
 @Observable
 final class TunnelRuntime {
+    enum FailureKind { case portInUse, authentication }
+
     let tunnelID: UUID
-    private let credentialTunnelID: UUID?
+    let agentRouteKey: AgentPreparedRoute.Key?
+    var heldByUser = false
+    var leasedByAgent = false
 
     private(set) var state: TunnelState = .off
     private(set) var lastError: String?
+    private(set) var failureKind: FailureKind?
     private(set) var forwardStatus: [UUID: ForwardStatus] = [:]
     private(set) var logs: [LogEntry] = []
 
@@ -42,14 +47,14 @@ final class TunnelRuntime {
 
     static let maxLogEntries = 2_000
 
-    init(tunnelID: UUID, credentialTunnelID: UUID? = nil) {
+    init(tunnelID: UUID, agentRouteKey: AgentPreparedRoute.Key? = nil) {
         self.tunnelID = tunnelID
-        self.credentialTunnelID = credentialTunnelID
+        self.agentRouteKey = agentRouteKey
     }
 
     var pid: Int32? { process?.isRunning == true ? process?.processIdentifier : nil }
     var currentConfiguration: Tunnel? { tunnel }
-    var isAgentOwned: Bool { credentialTunnelID != nil }
+    var isAgentOwned: Bool { agentRouteKey != nil }
 
     // MARK: Public control
 
@@ -143,6 +148,7 @@ final class TunnelRuntime {
         let generation = launchGeneration
         self.tunnel = tunnel
         fatalMessage = nil
+        failureKind = nil
         configProblem = nil
         networkProblemThisRun = false
         forwardFailedThisRun = false
@@ -166,17 +172,23 @@ final class TunnelRuntime {
         // Pre-flight: make sure local listening ports are free so the user gets a clear message.
         // lsof can take a moment, so it runs off the main thread.
         let checks = tunnel.enabledForwardings.filter(\.kind.listensLocally).map { (id: $0.id, port: $0.port, bind: $0.bindAddress) }
+        let ipv6ByDefault = SSHCommandBuilder.prefersIPv6(for: tunnel)
         Task { [weak self] in
+            guard let self else { return }
+            await manager?.waitForStoppingRoutes(profileID: agentRouteKey?.profileID ?? tunnelID, except: tunnelID)
+            guard generation == launchGeneration, desiredOn else { return }
             let conflict = await Task.detached(priority: .userInitiated) { () -> (id: UUID, message: String)? in
                 for check in checks {
-                    if let message = PortInspector.conflict(port: check.port, bindAddress: check.bind) {
+                    if let message = PortInspector.conflict(port: check.port, bindAddress: check.bind,
+                                                            ipv6ByDefault: ipv6ByDefault) {
                         return (check.id, message)
                     }
                 }
                 return nil
             }.value
-            guard let self, generation == self.launchGeneration, self.desiredOn else { return }
+            guard generation == launchGeneration, desiredOn else { return }
             if let conflict {
+                self.failureKind = .portInUse
                 self.forwardStatus[conflict.id] = .failed(conflict.message)
                 self.fail(conflict.message)
                 return
@@ -196,8 +208,8 @@ final class TunnelRuntime {
         }
         controlSocket = socket
         let sshPath = manager.sshPath
-        let builder = SSHCommandBuilder(context: .init(sshPath: sshPath, helperExecutable: Bundle.main.executablePath,
-                                                       controlPath: socket.url.path))
+        var builder = manager.commandBuilder
+        builder.context.controlPath = socket.url.path
         let arguments = builder.arguments(for: tunnel)
 
         let p = Process()
@@ -294,6 +306,7 @@ final class TunnelRuntime {
                 if forwardStatus[f.id] != .active || port != nil { forwardStatus[f.id] = .failed(message) }
             }
         case .authFailed:
+            failureKind = .authentication
             fatalMessage = L10n.text("SSH authentication was rejected. Check the key or credentials.",
                                      "SSH 认证被拒绝，请检查密钥或登录凭据。")
             lastError = fatalMessage
@@ -323,21 +336,26 @@ final class TunnelRuntime {
         guard desiredOn, !restartRequested, forwardingTask == nil, let socket = controlSocket, socket.exists,
               let ssh = process?.executableURL?.path, let pid else { return }
         let rules = tunnel.enabledForwardings
+        let ipv6ByDefault = SSHCommandBuilder.prefersIPv6(for: tunnel)
         forwardingTask = Task.detached(priority: .userInitiated) { [weak self] in
             let failure = socket.apply(rules, ssh: ssh)
+            let conflict = failure.flatMap { result in
+                result.rule.kind.listensLocally ? PortInspector.conflict(port: result.rule.port, bindAddress: result.rule.bindAddress,
+                                                                         ipv6ByDefault: ipv6ByDefault) : nil
+            }
             guard !Task.isCancelled else { return }
-            await self?.finishedApplying(rules, failure: failure, pid: pid)
+            await self?.finishedApplying(rules, failure: failure, conflict: conflict, pid: pid)
         }
     }
 
-    private func finishedApplying(_ rules: [Forwarding], failure: SSHControlSocket.Failure?, pid: Int32) {
+    private func finishedApplying(_ rules: [Forwarding], failure: SSHControlSocket.Failure?, conflict: String?, pid: Int32) {
         guard self.pid == pid, desiredOn, let process else { return }
         if let failure {
             let rule = failure.rule
+            if conflict != nil { failureKind = .portInUse }
             let message = rule.kind == .remote
                 ? L10n.text("The SSH server refused port \(rule.port).", "SSH 服务器未接受端口 \(rule.port) 的转发。")
-                : PortInspector.conflict(port: rule.port, bindAddress: rule.bindAddress) ??
-                    L10n.text("Unable to listen on local port \(rule.port).", "无法监听本机端口 \(rule.port)。")
+                : conflict ?? L10n.text("Unable to listen on local port \(rule.port).", "无法监听本机端口 \(rule.port)。")
             forwardFailedThisRun = true
             lastError = message
             forwardStatus[rule.id] = .failed(message)
@@ -465,7 +483,7 @@ final class TunnelRuntime {
     func answer(_ request: AskpassRequest) async -> AskpassReply {
         guard let manager, let tunnel = tunnel ?? manager.store.tunnel(tunnelID) else { return .cancelled }
         guard desiredOn else { return .cancelled }
-        let credentials = credentialTunnelID ?? tunnelID
+        let credentials = agentRouteKey?.profileID ?? tunnelID
 
         if request.kind == .proxyPassword {
             if let saved = Keychain.get(Keychain.proxyPassword(credentials)) { return AskpassReply(ok: true, answer: saved) }
@@ -528,10 +546,11 @@ final class TunnelRuntime {
     // MARK: Demo support (snapshots)
 
     func applyDemo(state: TunnelState, forwardStatus: [UUID: ForwardStatus] = [:],
-                   logs: [(LogLevel, String)] = [], lastError: String? = nil) {
+                   logs: [(LogLevel, String)] = [], lastError: String? = nil, failureKind: FailureKind? = nil) {
         self.state = state
         self.forwardStatus = forwardStatus
         self.lastError = lastError
+        self.failureKind = failureKind
         self.desiredOn = state.isActive
         for (level, message) in logs { log(level, message) }
     }

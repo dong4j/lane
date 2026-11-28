@@ -249,7 +249,8 @@ struct LaneMenuBar: View {
 
     private func managedRow(_ tunnel: Tunnel) -> some View {
         let current = model.manager.state(tunnel.id)
-        let status = model.manager.runtimes[tunnel.id]
+        let keeping = model.manager.keepsConnected(tunnel.id)
+        let shared = model.manager.agentRuleCount(tunnel)
         let rules = tunnel.enabledForwardings
         let kind = rules.first?.kind ?? .local
         let subtitle = switch (rules.count, kind) {
@@ -259,8 +260,10 @@ struct LaneMenuBar: View {
         }
         let icon = current.isFailure ? "exclamationmark.triangle" :
             kind == .local ? "square.3.layers.3d" : kind == .remote ? "macwindow" : kind.routeIcon
-        let detail = current.displayLabel + (current.isConnected || rules.count == 1 && kind != .local ? " · \(subtitle)" : "")
-        let expandable = current.isConnected && rules.count > 1
+        let label = model.manager.connectionLabel(tunnel, state: current)
+        let detail = label + (label == current.displayLabel && (current.isConnected || rules.count == 1 && kind != .local)
+                              ? " · \(subtitle)" : "")
+        let expandable = (current.isConnected || shared > 0) && rules.count > 1
         let expanded = expansion(of: tunnel.id, in: $expandedManaged)
         let title = rowLabel(tunnel.displayName, detail: detail, icon: icon,
                              ink: current.isFailure ? style.warning : style.ink(kind),
@@ -277,11 +280,12 @@ struct LaneMenuBar: View {
                     title
                         .allowsHitTesting(false)
                         .accessibilityHidden(expandable)
-                    if current.isConnected, rules.count == 1, let rule = rules.first, status?.forwardStatus[rule.id] == .active {
-                        CopyAction(model: model, value: rule.clientAddress, key: rule.id.uuidString, title: rule.copyTitle, iconOnly: true)
+                    if rules.count == 1, let rule = rules.first, model.manager.ruleStatus(rule, in: tunnel) == .active {
+                        CopyAction(model: model, value: model.manager.ruleAddress(rule, in: tunnel), key: rule.id.uuidString,
+                                   title: rule.copyTitle, iconOnly: true)
                     }
-                    Button(current.isFailure ? L10n.text("View", "查看") : current.isActive ?
-                           L10n.text("Disconnect", "断开") : L10n.text("Connect", "连接")) {
+                    Button(current.isFailure ? L10n.text("View", "查看") : keeping ? L10n.text("Disconnect", "断开") :
+                           shared > 0 ? L10n.text("Keep Connected", "保持连接") : L10n.text("Connect", "连接")) {
                         if current.isFailure {
                             model.selection = .managed(tunnel.id)
                             showMainWindow()
@@ -301,9 +305,11 @@ struct LaneMenuBar: View {
             if expandable, expanded.wrappedValue {
                 expandedEntries {
                     ForEach(rules) { rule in
-                        entry(rule.kind == .remote ? L10n.text("Server", "服务器") : rule.displayName,
-                              value: rule.clientAddress, key: rule.id.uuidString, title: rule.copyTitle,
-                              enabled: status?.forwardStatus[rule.id] == .active)
+                        let status = model.manager.ruleStatus(rule, in: tunnel)
+                        entry(rule.displayName,
+                              subtitle: rule.kind == .remote ? L10n.text("Server entry", "服务器入口") : nil,
+                              value: status == .active ? model.manager.ruleAddress(rule, in: tunnel) : status.displayLabel,
+                              key: rule.id.uuidString, title: rule.copyTitle, enabled: status == .active)
                     }
                 }
             }
@@ -388,11 +394,14 @@ struct LaneMenuBar: View {
             .transition(.opacity.combined(with: .offset(y: -4)))
     }
 
-    private func entry(_ name: String, value: String, key: String, title: String, enabled: Bool) -> some View {
+    private func entry(_ name: String, subtitle: String? = nil, value: String, key: String, title: String, enabled: Bool) -> some View {
         HStack(spacing: 8) {
             if name.isEmpty { Image(systemName: "arrow.turn.down.right").foregroundStyle(style.accent) }
             else {
-                Text(name).fontWeight(.medium).lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name).fontWeight(.medium).lineLimit(1)
+                    if let subtitle { Text(subtitle).font(.caption2).foregroundStyle(style.secondary).lineLimit(1) }
+                }
                 Spacer(minLength: 2)
             }
             Text(value).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(2).layoutPriority(1)

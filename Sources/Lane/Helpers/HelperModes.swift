@@ -42,7 +42,8 @@ enum ProxyHelper {
 
         var password = ""
         if askPassword {
-            password = fetchProxyPassword() ?? ""
+            let appIsRequesting = ProcessInfo.processInfo.environment[AskpassEnvironment.socketPath] != nil
+            password = (appIsRequesting ? fetchProxyPassword() : terminalProxyPassword()) ?? ""
         }
 
         let fd: Int32
@@ -100,6 +101,17 @@ enum ProxyHelper {
         let request = AskpassRequest(token: token, tunnelID: tunnel, kind: .proxyPassword, prompt: "Proxy password")
         guard let reply = try? UnixSocket.roundTrip(socketPath: socket, request: request), reply.ok else { return nil }
         return reply.answer
+    }
+
+    /// A copied command prompts on the user's terminal. SSH's protocol pipes must stay untouched.
+    private static func terminalProxyPassword() -> String? {
+        var buffer = [CChar](repeating: 0, count: 1024)
+        defer { _ = buffer.withUnsafeMutableBytes { $0.initializeMemory(as: UInt8.self, repeating: 0) } }
+        return buffer.withUnsafeMutableBufferPointer { bytes -> String? in
+            guard let start = bytes.baseAddress,
+                  readpassphrase("Proxy password: ", start, bytes.count, RPP_REQUIRE_TTY) != nil else { return nil }
+            return String(cString: start)
+        }
     }
 }
 

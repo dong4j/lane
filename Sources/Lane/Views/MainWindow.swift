@@ -208,8 +208,9 @@ struct MainWindow: View {
         let state = model.manager.state(tunnel.id)
         let kind = tunnel.enabledForwardings.first?.kind ?? .local
         let count = tunnel.enabledForwardings.count
-        let subtitle = state.isConnected ? state.displayLabel + " · " +
-            (kind == .dynamic && count == 1 ? "SOCKS5" : L10n.text("\(count) rules", "\(count) 条规则")) : state.displayLabel
+        let label = model.manager.connectionLabel(tunnel, state: state)
+        let subtitle = state.isConnected && label == state.displayLabel ? label + " · " +
+            (kind == .dynamic && count == 1 ? "SOCKS5" : L10n.text("\(count) rules", "\(count) 条规则")) : label
         return sidebarRow(title: tunnel.displayName, subtitle: subtitle,
                           icon: state.isFailure ? "exclamationmark.triangle" : kind == .local ? "square.3.layers.3d" :
                             kind == .remote ? "macwindow" : kind.routeIcon,

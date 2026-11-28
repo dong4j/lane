@@ -58,7 +58,7 @@ For a shared rule, use an ID from `lane_list`. Repeat the same `idempotency_key`
 - **Temporary destination.** Use `kind: "temporary"`, an ID from `lane_list` → `profiles` as `profile_id`, plus `listen_port`, `target_host`, and `target_port`. A saved profile can be selected even if it has no eligible loopback rule. The listener defaults to `127.0.0.1`. For IPv6, set `listen_host` to `::1`.
 - **External listener.** Use `kind: "external"` and `external_address`, for example `127.0.0.1:3113`. Lane must observe a matching loopback `-L` listener. Releasing the lease ends the reference while the original process retains ownership of the listener.
 
-A request opens only the selected loopback `-L` rule. Compatible requests can share the same established forward. The last lease closes a forward started for Agents. Manually connected tunnels remain open under the user's control. Changing a saved route ends affected Agent leases and refreshes the available rule.
+A request opens only the selected loopback `-L` rule. Compatible Agent and manual connections share the existing listener. Choose **Keep Connected** from the menu or main window to open any sibling rules and keep the tunnel after the last Agent lease ends. Changing a saved route ends affected leases and refreshes the available rule.
 
 New SSH connections start in `connecting` and have up to two minutes to become ready. The default lease lasts 15 minutes from first readiness. Supported durations are 1 to 3,600 seconds. While the route is reconnecting, wait for `ready` before using the address again.
 

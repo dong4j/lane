@@ -219,7 +219,7 @@ final class AgentAccess {
 
     func borrowed(_ lease: AgentLease) -> Bool {
         guard let key = lease.connectionKey, let connection = connections[key] else { return false }
-        return !connection.runtime.isAgentOwned
+        return !connection.runtime.isAgentOwned || connection.runtime.heldByUser
     }
 
     private func request(_ arguments: AgentToolArguments, credential: AgentCredential) async throws -> AgentLease {
@@ -256,26 +256,21 @@ final class AgentAccess {
                                events: [.init(at: now, action: .requested, reason: nil),
                                         .init(at: now, action: .authorized, reason: nil)])
         if let managed {
-            let existing = connections[managed.key] ?? manualConnection(for: managed)
+            let existing = connections[managed.key] ?? manager.reusableRoute(managed).map {
+                Connection(runtime: $0.0, ruleID: $0.1)
+            }
             lease.reusesExistingConnection = existing != nil
             // Persist the audit before starting an SSH process.
             try save(lease)
-            connections[managed.key] = existing ?? Connection(runtime: manager.connectAgentRoute(managed), ruleID: managed.rule.id)
+            let connection = existing ?? Connection(runtime: manager.connectAgentRoute(managed), ruleID: managed.rule.id)
+            if connection.runtime.isAgentOwned { connection.runtime.leasedByAgent = true }
+            connections[managed.key] = connection
             try reconcile(at: now)
         } else {
             lease.makeReady(action: .reused, at: now)
             try save(lease)
         }
         return self.lease(lease.id) ?? lease
-    }
-
-    private func manualConnection(for route: AgentPreparedRoute) -> Connection? {
-        guard let runtime = manager.runtimes[route.key.profileID], runtime.desiredOn, let current = runtime.currentConfiguration,
-              let match = current.enabledForwardings.first(where: { rule in
-                  rule.bindAddress == route.rule.bindAddress &&
-                      AgentPreparedRoute(profile: current, forwarding: rule)?.key == route.key
-              }) else { return nil }
-        return Connection(runtime: runtime, ruleID: match.id)
     }
 
     private func prepared(_ target: AgentLeaseInput.Target) -> AgentPreparedRoute? {
@@ -334,7 +329,7 @@ final class AgentAccess {
         } catch {
             storageError = true
             // If storage fails during cleanup, stop owned forwards anyway. Borrowed sessions remain untouched.
-            for item in connections.values where item.runtime.isAgentOwned { item.runtime.stop() }
+            for item in connections.values { manager.releaseAgentRoute(item.runtime) }
             connections.removeAll()
             throw AgentToolError.storage
         }
@@ -395,8 +390,8 @@ final class AgentAccess {
     private func collectUnusedConnections() {
         let inUse = Set(active.compactMap(\.connectionKey))
         for key in connections.keys.filter({ !inUse.contains($0) }) {
-            if let connection = connections.removeValue(forKey: key), connection.runtime.isAgentOwned {
-                connection.runtime.stop()
+            if let connection = connections.removeValue(forKey: key) {
+                manager.releaseAgentRoute(connection.runtime)
             }
         }
     }

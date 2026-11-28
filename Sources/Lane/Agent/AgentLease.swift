@@ -42,7 +42,8 @@ struct AgentPreparedRoute {
 
     init?(profile: Tunnel, forwarding: Forwarding) {
         guard forwarding.enabled, forwarding.kind == .local,
-              let bind = Self.loopback(forwarding.bindAddress),
+              let bind = Self.loopback(forwarding.bindAddress,
+                                       ipv6ByDefault: SSHCommandBuilder.prefersIPv6(for: profile)),
               let target = Self.targetHost(forwarding.targetHost) else { return nil }
         var rule = forwarding
         rule.bindAddress = bind
@@ -51,7 +52,7 @@ struct AgentPreparedRoute {
         isolated.forwardings = [rule]
         isolated.autoConnect = false
         guard !TunnelValidator.validate(isolated).contains(where: { $0.severity == .error }),
-              let arguments = try? JSONEncoder().encode(SSHCommandBuilder().arguments(for: isolated)) else { return nil }
+              let arguments = try? JSONEncoder().encode(SSHCommandBuilder.connectionArguments(for: isolated)) else { return nil }
         self.rule = rule
         tunnel = isolated
         key = Key(profileID: profile.id, fingerprint: agentDigest(arguments))
@@ -60,9 +61,10 @@ struct AgentPreparedRoute {
     }
 
     /// Explicit numeric binds prevent a user's GatewayPorts setting from widening an Agent listener.
-    static func loopback(_ host: String) -> String? {
+    static func loopback(_ host: String, ipv6ByDefault: Bool = false) -> String? {
         switch host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "", "localhost", "127.0.0.1": "127.0.0.1"
+        case "", "localhost": ipv6ByDefault ? "::1" : "127.0.0.1"
+        case "127.0.0.1": "127.0.0.1"
         case "::1", "[::1]": "::1"
         default: nil
         }

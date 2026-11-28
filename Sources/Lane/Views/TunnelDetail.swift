@@ -11,22 +11,25 @@ struct TunnelDetail: View {
     @State private var confirmDelete = false
 
     private var style: LaneStyle { LaneStyle(scheme: scheme) }
-    private var runtime: TunnelRuntime? { model.manager.runtimes[tunnel.id] }
+    private var runtime: TunnelRuntime? { model.manager.displayRuntime(tunnel.id) }
     private var state: TunnelState { model.manager.state(tunnel.id) }
     private var selectedRule: Forwarding? { tunnel.forwardings.first { $0.id == selectedRuleID } ?? tunnel.enabledForwardings.first ?? tunnel.forwardings.first }
     private var failedRule: Forwarding? {
         tunnel.forwardings.first { rule in
-            if case .failed = runtime?.forwardStatus[rule.id] { return true }
+            if case .failed = model.manager.ruleStatus(rule, in: tunnel) { return true }
             return false
         }
     }
-    private var portConflict: Bool {
-        guard let failedRule, failedRule.kind.listensLocally, let message = runtime?.lastError else { return false }
-        return message.localizedCaseInsensitiveContains("in use") || message.contains("已被占用") || message.contains("占用")
-    }
+    private var portConflict: Bool { runtime?.failureKind == .portInUse }
     private var canCopySelected: Bool {
         guard let selectedRule else { return false }
-        return state.isConnected && runtime?.forwardStatus[selectedRule.id] == .active
+        return model.manager.ruleStatus(selectedRule, in: tunnel) == .active
+    }
+    private var copyCommandTitle: String {
+        if model.manager.commandBuilder.proxyCommand(for: tunnel) != nil {
+            return L10n.text("Copy SSH Command (Uses Lane)", "复制 SSH 命令（需要 Lane）")
+        }
+        return L10n.text("Copy SSH Command", "复制 SSH 命令")
     }
 
     var body: some View {
@@ -67,7 +70,7 @@ struct TunnelDetail: View {
                 .help(L10n.text("Edit tunnel", "编辑隧道"))
                 .accessibilityLabel(L10n.text("Edit tunnel", "编辑隧道"))
             Menu {
-                Button(L10n.text("Copy SSH Command", "复制 SSH 命令")) { copyCommand() }
+                Button(copyCommandTitle) { copyCommand() }
                 Button(L10n.text("Import SSH Configuration…", "导入 SSH 配置…")) { model.previewSSHConfig() }
                 Divider()
                 Button(L10n.text("Remove Tunnel…", "移除隧道…"), role: .destructive) { confirmDelete = true }
@@ -87,7 +90,9 @@ struct TunnelDetail: View {
     }
 
     private var heading: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        let keeping = model.manager.keepsConnected(tunnel.id)
+        let shared = model.manager.agentRuleCount(tunnel)
+        return VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .center, spacing: 10) {
                 Text(tunnel.displayName).font(.system(size: 34, weight: .semibold)).lineLimit(1).accessibilityAddTraits(.isHeader)
                 status
@@ -95,10 +100,11 @@ struct TunnelDetail: View {
                 Button {
                     model.manager.toggle(tunnel.id)
                 } label: {
-                    Label(state.isActive ? L10n.text("Disconnect", "断开") : L10n.text("Connect", "连接"),
-                          systemImage: state.isActive ? "stop" : "play")
+                    Label(keeping ? L10n.text("Disconnect", "断开") : shared > 0
+                          ? L10n.text("Keep Connected", "保持连接") : L10n.text("Connect", "连接"),
+                          systemImage: keeping ? "stop" : "play")
                 }
-                .buttonStyle(LaneButtonStyle(kind: state.isActive ? .neutral : .primary))
+                .buttonStyle(LaneButtonStyle(kind: keeping ? .neutral : .primary))
                 .disabled(state == .disconnecting)
             }
             HStack(spacing: 8) {
@@ -117,7 +123,7 @@ struct TunnelDetail: View {
     private var status: some View {
         let color = state.isConnected ? style.positive : state.isFailure ? style.warning : style.secondary
         let fill = state.isConnected ? style.positiveFill : state.isFailure ? style.warningFill : style.control
-        return Label(portConflict ? L10n.text("Port in use", "端口占用") : state.displayLabel,
+        return Label(portConflict ? L10n.text("Port in use", "端口占用") : model.manager.connectionLabel(tunnel, state: state),
                      systemImage: state.isConnected ? "checkmark.circle" : state.isFailure ? "exclamationmark.triangle" : "circle")
             .font(.system(size: 11, weight: .semibold))
             .padding(.horizontal, 8).padding(.vertical, 5)
@@ -167,7 +173,10 @@ struct TunnelDetail: View {
 
     private func ruleRow(_ rule: Forwarding) -> some View {
         let selected = selectedRule?.id == rule.id
-        let enabled = rule.enabled && state.isConnected && runtime?.forwardStatus[rule.id] == .active
+        let status = model.manager.ruleStatus(rule, in: tunnel)
+        let enabled = rule.enabled && status == .active
+        let label = rule.enabled ? status.displayLabel : L10n.text("Disabled", "已停用")
+        let address = model.manager.ruleAddress(rule, in: tunnel)
         return HStack(spacing: 10) {
             Button { selectedRuleID = rule.id } label: {
                 HStack(spacing: 9) {
@@ -177,7 +186,7 @@ struct TunnelDetail: View {
                         .background(style.tile(rule.kind), in: RoundedRectangle(cornerRadius: 8))
                     VStack(alignment: .leading, spacing: 4) {
                         Text(rule.displayName).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                        Text(rule.kind.displayLabel + (rule.note.isEmpty ? "" : " · \(rule.note)"))
+                        Text(rule.kind.displayLabel + " · " + label + (rule.note.isEmpty ? "" : " · \(rule.note)"))
                             .font(.system(size: 11)).foregroundStyle(style.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
@@ -186,12 +195,12 @@ struct TunnelDetail: View {
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(selected ? .isSelected : [])
-            Text(rule.clientAddress)
+            Text(address)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .lineLimit(2)
                 .textSelection(.enabled)
                 .layoutPriority(1)
-            CopyAction(model: model, value: rule.clientAddress, key: rule.id.uuidString,
+            CopyAction(model: model, value: address, key: rule.id.uuidString,
                        title: rule.copyTitle, prominent: selected, iconOnly: !selected)
                 .disabled(!enabled)
         }
@@ -212,7 +221,7 @@ struct TunnelDetail: View {
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(style.secondary)
                     Spacer()
                     Button(model.copied == "command-\(tunnel.id)" ? L10n.text("Copied", "已复制") :
-                            L10n.text("Copy SSH command", "复制 SSH 命令")) { copyCommand() }
+                            copyCommandTitle) { copyCommand() }
                         .buttonStyle(LaneButtonStyle())
                     Button(L10n.text("Full log", "完整日志")) { model.logID = tunnel.id }
                         .buttonStyle(LaneButtonStyle())
@@ -237,7 +246,6 @@ struct TunnelDetail: View {
     }
 
     private func copyCommand() {
-        let builder = SSHCommandBuilder(context: .init(sshPath: model.manager.sshPath))
-        model.copy(builder.displayCommand(for: tunnel), key: "command-\(tunnel.id)")
+        model.copy(model.manager.commandBuilder.displayCommand(for: tunnel), key: "command-\(tunnel.id)")
     }
 }

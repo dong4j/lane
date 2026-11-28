@@ -1,26 +1,32 @@
+import Darwin
 import Foundation
 
 public struct ValidationIssue: Hashable, Sendable, Identifiable {
     public enum Severity: Sendable { case error, warning }
+    public enum ForwardField: Hashable, Sendable { case listenAddress, listenPort, targetHost, targetPort }
+
     public enum Field: Hashable, Sendable {
         case name, host, port, user, identityFile, proxy, forwardings
-        case forwarding(UUID)
+        case forwarding(UUID, ForwardField)
     }
 
     public var severity: Severity
     public var field: Field
     public var message: String
+    public var chineseMessage: String?
     public var id: String { "\(field)-\(message)" }
 
-    public init(_ severity: Severity, _ field: Field, _ message: String) {
+    public init(_ severity: Severity, _ field: Field, _ message: String, chinese: String? = nil) {
         self.severity = severity
         self.field = field
         self.message = message
+        chineseMessage = chinese
     }
 }
 
 public enum TunnelValidator {
-    static let forbiddenHostCharacters = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "'\"`;|&$<>(){}\\"))
+    static let forbiddenHostCharacters = CharacterSet.whitespacesAndNewlines.union(.controlCharacters)
+        .union(CharacterSet(charactersIn: "'\"`;|&$<>(){}\\"))
 
     public static func isValidPort(_ port: Int) -> Bool { (1...65535).contains(port) }
 
@@ -28,6 +34,25 @@ public enum TunnelValidator {
         let v = value.trimmingCharacters(in: .whitespaces)
         guard !v.isEmpty, !v.hasPrefix("-") else { return false }
         return v.rangeOfCharacter(from: forbiddenHostCharacters) == nil
+    }
+
+    private static func isValidListenAddress(_ value: String) -> Bool {
+        if value.isEmpty || value == "*" { return true }
+        guard isValidHostToken(value) else { return false }
+        let bracketed = value.hasPrefix("[") && value.hasSuffix("]")
+        if value.contains(":") || bracketed {
+            let host = bracketed ? String(value.dropFirst().dropLast()) : value
+            let parts = host.split(separator: "%", omittingEmptySubsequences: false)
+            var address = in6_addr()
+            return parts.count <= 2 && (parts.count == 1 || !parts[1].isEmpty) &&
+                inet_pton(AF_INET6, String(parts[0]), &address) == 1
+        }
+        if value.contains("."), value.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }) {
+            var address = in_addr()
+            return inet_pton(AF_INET, value, &address) == 1
+        }
+        let nameCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        return value.unicodeScalars.allSatisfy(nameCharacters.contains)
     }
 
     public static func validate(_ tunnel: Tunnel, fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: ($0 as NSString).expandingTildeInPath) }) -> [ValidationIssue] {
@@ -83,12 +108,14 @@ public enum TunnelValidator {
             if f.kind.listensLocally {
                 let key = "\(normalizedBind(f.bindAddress)):\(f.port)"
                 if seenLocal[key] != nil {
-                    issues.append(.init(.error, .forwarding(f.id), String(localized: "Port \(String(f.port)) is used by more than one rule.")))
+                    issues.append(.init(.error, .forwarding(f.id, .listenPort), "Port \(f.port) is used by more than one rule.",
+                                        chinese: "端口 \(f.port) 已被其他规则使用。"))
                 }
                 seenLocal[key] = f.id
             } else {
                 if seenRemote[f.port] != nil {
-                    issues.append(.init(.error, .forwarding(f.id), String(localized: "Remote port \(String(f.port)) is used by more than one rule.")))
+                    issues.append(.init(.error, .forwarding(f.id, .listenPort), "Remote port \(f.port) is used by more than one rule.",
+                                        chinese: "远程端口 \(f.port) 已被其他规则使用。"))
                 }
                 seenRemote[f.port] = f.id
             }
@@ -98,25 +125,30 @@ public enum TunnelValidator {
 
     public static func validate(_ f: Forwarding) -> [ValidationIssue] {
         var issues: [ValidationIssue] = []
-        let field = ValidationIssue.Field.forwarding(f.id)
         if !isValidPort(f.port) {
-            issues.append(.init(.error, field, String(localized: "Listening port must be between 1 and 65535.")))
+            issues.append(.init(.error, .forwarding(f.id, .listenPort), "Listening port must be between 1 and 65535.",
+                                chinese: "监听端口必须介于 1 和 65535。"))
         } else if f.kind == .remote && f.port < 1024 {
-            issues.append(.init(.warning, field, String(localized: "Remote ports below 1024 can only be opened when logging in as root.")))
+            issues.append(.init(.warning, .forwarding(f.id, .listenPort), "Remote ports below 1024 require a root login.",
+                                chinese: "远程端口低于 1024，需要以 root 登录。"))
         }
         let bind = f.bindAddress.trimmingCharacters(in: .whitespaces)
-        if !bind.isEmpty && bind != "*" && !isValidHostToken(bind) {
-            issues.append(.init(.error, field, String(localized: "The bind address is not valid.")))
+        if !isValidListenAddress(bind) {
+            issues.append(.init(.error, .forwarding(f.id, .listenAddress), "Enter a valid listening address.",
+                                chinese: "请输入有效的监听地址。"))
         }
         if f.kind == .remote && !bind.isEmpty && bind != "localhost" && bind != "127.0.0.1" {
-            issues.append(.init(.warning, field, String(localized: "A remote bind address only works when the server sets “GatewayPorts clientspecified”.")))
+            issues.append(.init(.warning, .forwarding(f.id, .listenAddress), "The server must allow the remote listening address (GatewayPorts clientspecified).",
+                                chinese: "SSH 服务器须启用 GatewayPorts clientspecified 才能使用此监听地址。"))
         }
         if f.kind != .dynamic {
             if !isValidHostToken(f.targetHost) {
-                issues.append(.init(.error, field, String(localized: "Enter the destination host.")))
+                issues.append(.init(.error, .forwarding(f.id, .targetHost), "Enter a valid destination host.",
+                                    chinese: "请输入有效的目标主机。"))
             }
             if !isValidPort(f.targetPort) {
-                issues.append(.init(.error, field, String(localized: "Destination port must be between 1 and 65535.")))
+                issues.append(.init(.error, .forwarding(f.id, .targetPort), "Destination port must be between 1 and 65535.",
+                                    chinese: "目标端口必须介于 1 和 65535。"))
             }
         }
         return issues

@@ -4,7 +4,7 @@ import Foundation
 public struct SSHCommandBuilder: Sendable {
     public struct Context: Sendable {
         public var sshPath: String
-        /// Executable that implements `--proxy-connect` (the Porthole binary itself).
+        /// Executable that implements `--proxy-connect` (the Lane binary itself).
         public var helperExecutable: String?
         /// Include `-v` so Porthole can follow connection progress.
         public var verbose: Bool
@@ -24,6 +24,20 @@ public struct SSHCommandBuilder: Sendable {
 
     public init(context: Context = Context()) {
         self.context = context
+    }
+
+    /// Use the real proxy argument format without binding the comparison to an installation path.
+    public static func connectionArguments(for tunnel: Tunnel) -> [String] {
+        SSHCommandBuilder(context: .init(helperExecutable: "/Lane")).arguments(for: tunnel)
+    }
+
+    /// Resolve the same first-wins option OpenSSH receives for default loopback bindings.
+    public static func prefersIPv6(for tunnel: Tunnel) -> Bool {
+        let prefix = "addressfamily="
+        if let option = parseExtraOptions(tunnel.extraOptions).first(where: { $0.lowercased().hasPrefix(prefix) }) {
+            return option.dropFirst(prefix.count).lowercased() == "inet6"
+        }
+        return tunnel.addressFamily == .ipv6
     }
 
     /// Full argument vector (without the executable path).

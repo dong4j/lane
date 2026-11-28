@@ -183,7 +183,7 @@ import Testing
         let a = Forwarding(kind: .local, port: 8080, targetHost: "a", targetPort: 1)
         let b = Forwarding(kind: .dynamic, bindAddress: "localhost", port: 8080)
         let t = Tunnel(host: "h", forwardings: [a, b])
-        #expect(TunnelValidator.validate(t).contains { $0.field == .forwarding(b.id) && $0.severity == .error })
+        #expect(TunnelValidator.validate(t).contains { $0.field == .forwarding(b.id, .listenPort) && $0.severity == .error })
     }
 
     @Test func portNumbersHaveNoDigitGrouping() {

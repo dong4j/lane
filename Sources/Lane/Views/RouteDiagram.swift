@@ -166,7 +166,7 @@ struct RouteDiagram: View {
     }
 
     private func startCaption(remote: Bool, dynamic: Bool, narrow: Bool) -> String {
-        if remote { return L10n.text("Mac · Service", narrow ? "本机服务" : "这台 Mac · 本机服务") }
+        if remote { return L10n.text("Target via Mac", narrow ? "经 Mac 访问" : "Mac 访问的目标") }
         if dynamic { return L10n.text("Mac · SOCKS5", narrow ? "本机 SOCKS5" : "这台 Mac · SOCKS5") }
         return L10n.text("Mac · Entry", narrow ? "本机入口" : "这台 Mac · 本机入口")
     }

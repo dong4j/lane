@@ -55,11 +55,12 @@ enum Keychain {
 
 /// Local bind failures are attributed only after the kernel reports a conflict on the requested address.
 enum PortInspector {
-    static func conflict(port: Int, bindAddress: String) -> String? {
-        let host = switch bindAddress {
-        case "", "localhost": "127.0.0.1"
-        case "*": "0.0.0.0"
-        default: bindAddress.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    static func conflict(port: Int, bindAddress: String, ipv6ByDefault: Bool = false) -> String? {
+        let bindName = bindAddress.trimmingCharacters(in: .whitespaces)
+        let host = switch bindName.lowercased() {
+        case "", "localhost": ipv6ByDefault ? "::1" : "127.0.0.1"
+        case "*": ipv6ByDefault ? "::" : "0.0.0.0"
+        default: bindName.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
         }
         var hints = addrinfo()
         hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV
@@ -73,25 +74,68 @@ enum PortInspector {
         defer { close(socketFD) }
         var reuse: Int32 = 1
         setsockopt(socketFD, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        if address.ai_family == AF_INET6 {
+            setsockopt(socketFD, IPPROTO_IPV6, IPV6_V6ONLY, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        }
         guard bind(socketFD, address.ai_addr, address.ai_addrlen) == -1, errno == EADDRINUSE else { return nil }
-        if let owner = listenerNames(port: port).first {
+        if let owner = listenerName(in: listenerOutput(port: port), port: port, host: host, family: address.ai_family) {
             return L10n.text("Local port \(port) is in use by \(owner).", "本机端口 \(port) 已被 \(owner) 占用。")
         }
         return L10n.text("Local port \(port) is already in use.", "本机端口 \(port) 已被占用。")
     }
 
-    private static func listenerNames(port: Int) -> [String] {
+    private static func listenerOutput(port: Int) -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        process.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-Fc"]
+        process.arguments = ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-Fpcftn"]
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return [] }
+        guard (try? process.run()) != nil else { return "" }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap {
-            $0.first == "c" ? String($0.dropFirst()) : nil
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// lsof uses `*` for either address family. Require its socket type before matching a wildcard.
+    static func listenerName(in output: String, port: Int, host: String, family: Int32) -> String? {
+        let expectedType = family == AF_INET6 ? "IPv6" : "IPv4"
+        let wildcard = family == AF_INET6 ? "::" : "0.0.0.0"
+        var owners: [String: String] = [:]
+        var pid = ""
+        var command = ""
+        var type = ""
+        for line in output.split(separator: "\n") {
+            let value = line.dropFirst()
+            switch line.first {
+            case "p":
+                pid = String(value)
+                command = ""
+                type = ""
+            case "c": command = String(value)
+            case "f": type = ""
+            case "t": type = String(value)
+            case "n" where type == expectedType:
+                guard !pid.isEmpty, !command.isEmpty, let colon = value.lastIndex(of: ":"),
+                      Int(value[value.index(after: colon)...]) == port else { continue }
+                let bound = value[..<colon].trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+                if host == wildcard || bound == "*" || bound == wildcard || sameAddress(bound, host, family: family) {
+                    owners[pid] = command
+                }
+            default: break
+            }
+        }
+        return owners.count == 1 ? owners.values.first : nil
+    }
+
+    private static func sameAddress(_ left: String, _ right: String, family: Int32) -> Bool {
+        if left == right { return true }
+        guard family == AF_INET6 else { return false }
+        var lhs = in6_addr()
+        var rhs = in6_addr()
+        guard inet_pton(family, left, &lhs) == 1, inet_pton(family, right, &rhs) == 1 else { return false }
+        return withUnsafeBytes(of: &lhs) { lhs in
+            withUnsafeBytes(of: &rhs) { rhs in lhs.elementsEqual(rhs) }
         }
     }
 }

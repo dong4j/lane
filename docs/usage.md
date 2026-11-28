@@ -12,7 +12,7 @@ In the main window, choose **New Tunnel** and enter an SSH alias or hostname. An
 | Remote `-R` | A port on the SSH server, for example its `127.0.0.1:18080` | A fixed service from this Mac, for example `127.0.0.1:3000` |
 | Dynamic `-D` | A SOCKS5 proxy on this Mac, for example `127.0.0.1:1080` | Each destination selected by the client, reached from the SSH host |
 
-Choose **Save and Connect**, or save and connect later from the menu. Lane opens one SSH connection for a profile and applies its enabled rules. The path diagram shows where the connection starts and labels the SSH-encrypted leg. If you only need a local client to access a rule, use a loopback binding such as `127.0.0.1`. Remote listener visibility is subject to the SSH server's policy.
+Choose **Save and Connect**, or save and connect later from the menu. If an Agent already opened a saved rule, **Keep Connected** reuses that listener and opens any other enabled rules. The path diagram shows where the connection starts and labels the SSH-encrypted leg. If you only need a local client to access a rule, use a loopback binding such as `127.0.0.1`. Remote listener visibility is subject to the SSH server's policy.
 
 **Connected** means SSH and the forwarding rules are ready. To test the destination, make a request from the actual client, such as a database query, HTTP request, or SOCKS5-aware connection.
 
@@ -30,7 +30,7 @@ Under **Settings → Data**, preview aliases with explicit forwarding rules from
 
 ## Diagnose a connection
 
-1. Check **Diagnostics & Logs** for the SSH command, authentication stage, and recent events.
+1. Check **Diagnostics & Logs** for the SSH command, authentication stage, and recent events. The copied command for a built-in proxy uses the Lane executable. A password-protected proxy can prompt in the terminal.
 2. If a listener is occupied, open the affected rule, choose a different port or release the existing one, then retry.
 3. For a first-time SSH host key, verify the fingerprint against a trusted source before accepting it. For a changed fingerprint, check with the server administrator.
 4. If Lane shows **Connected** and the application reports an error, test that the destination is reachable from the machine shown on the route diagram.

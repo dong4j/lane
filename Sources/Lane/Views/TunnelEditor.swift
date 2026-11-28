@@ -67,6 +67,7 @@ struct TunnelEditor: View {
     @State private var rules: [RuleDraft]
     @State private var selectedID: UUID
     @State private var advanced = false
+    @State private var focusAfterExpansion: Field?
     @State private var error: String?
     @State private var pendingSave: Tunnel?
     @State private var pendingConnect = false
@@ -212,7 +213,7 @@ struct TunnelEditor: View {
                     .padding(.leading, 4).padding(.top, 7)
                     Spacer(minLength: 0)
                 } else {
-                    input(kind == .remote ? L10n.text("Mac target host", "本机目标主机") : L10n.text("Target host", "目标主机"),
+                    input(kind == .remote ? L10n.text("Target host from this Mac", "这台 Mac 访问的目标") : L10n.text("Target host", "目标主机"),
                           text: fields.targetHost, placeholder: "127.0.0.1", field: .target, mono: true)
                     input(L10n.text("Target port", "目标端口"), text: fields.targetPort,
                           placeholder: "5432", field: .targetPort, mono: true)
@@ -250,6 +251,11 @@ struct TunnelEditor: View {
                     input(L10n.text("SSH Port", "SSH 端口"), text: $port, placeholder: "22", field: .sshPort, mono: true)
                     input(L10n.text("Listening address", "监听地址"), text: rule.fields.bind,
                           placeholder: "127.0.0.1", field: .bind, mono: true)
+                }
+                .onAppear {
+                    guard let destination = focusAfterExpansion else { return }
+                    focusAfterExpansion = nil
+                    Task { @MainActor in focus = destination }
                 }
                 HStack(spacing: 12) {
                     input(L10n.text("Private key path", "私钥路径"), text: $identity, placeholder: "~/.ssh/id_ed25519",
@@ -336,10 +342,10 @@ struct TunnelEditor: View {
         tunnel.forwardings = rules.map(\.resolved)
 
         if let issue = TunnelValidator.validate(tunnel).first(where: { $0.severity == .error }) {
-            show(issue, tunnel: tunnel)
+            show(issue)
             return
         }
-        if let old = model.store.tunnel(tunnel.id), model.manager.runtimes[tunnel.id]?.desiredOn == true,
+        if let old = model.store.tunnel(tunnel.id), model.manager.keepsConnected(tunnel.id),
            model.manager.requiresRestart(for: tunnel, replacing: old) {
             pendingConnect = connect
             pendingSave = tunnel
@@ -348,35 +354,35 @@ struct TunnelEditor: View {
         commit(tunnel, connect: connect)
     }
 
-    private func show(_ issue: ValidationIssue, tunnel: Tunnel) {
+    private func focusAdvanced(_ field: Field) {
+        if advanced {
+            focus = field
+        } else {
+            focusAfterExpansion = field
+            advanced = true
+        }
+    }
+
+    private func show(_ issue: ValidationIssue) {
         switch issue.field {
         case .host, .user:
             focus = .sshHost
             error = L10n.text("Enter a valid alias or user@host.", "请输入有效的 SSH 别名或 user@host。")
         case .port:
-            advanced = true
-            focus = .sshPort
+            focusAdvanced(.sshPort)
             error = L10n.text("SSH port must be between 1 and 65535.", "SSH 端口必须介于 1 和 65535。")
         case .identityFile:
-            advanced = true
-            focus = .identity
+            focusAdvanced(.identity)
             error = L10n.text("Choose a private key file.", "请选择有效的私钥文件。")
-        case .forwarding(let id):
+        case .forwarding(let id, let field):
             selectedID = id
-            guard let rule = tunnel.forwardings.first(where: { $0.id == id }) else { return }
-            if !TunnelValidator.isValidPort(rule.port) {
-                focus = .listenPort
-                error = L10n.text("Listening port must be between 1 and 65535.", "监听端口必须介于 1 和 65535。")
-            } else if rule.kind != .dynamic && !TunnelValidator.isValidHostToken(rule.targetHost) {
-                focus = .target
-                error = L10n.text("Enter a valid target host.", "请输入有效的目标主机。")
-            } else if rule.kind != .dynamic && !TunnelValidator.isValidPort(rule.targetPort) {
-                focus = .targetPort
-                error = L10n.text("Target port must be between 1 and 65535.", "目标端口必须介于 1 和 65535。")
-            } else {
-                focus = .listenPort
-                error = issue.message
+            switch field {
+            case .listenAddress: focusAdvanced(.bind)
+            case .listenPort: focus = .listenPort
+            case .targetHost: focus = .target
+            case .targetPort: focus = .targetPort
             }
+            error = L10n.text(issue.message, issue.chineseMessage ?? issue.message)
         default:
             error = issue.message
         }

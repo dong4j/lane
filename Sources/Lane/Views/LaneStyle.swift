@@ -113,8 +113,8 @@ extension ForwardingKind {
         switch self {
         case .local: L10n.text("Connect on this Mac to a fixed service reachable from the SSH host.",
                               "在这台 Mac 打开本机端口，访问 SSH 主机能访问的服务。")
-        case .remote: L10n.text("Use the server’s listening address to reach a service on this Mac.",
-                               "用服务器的监听地址，访问这台 Mac 上运行的服务。")
+        case .remote: L10n.text("Connect at the SSH server to reach a service accessible from this Mac.",
+                               "从 SSH 服务器的入口连接，访问这台 Mac 能访问的服务。")
         case .dynamic: L10n.text("Point a client at the local SOCKS5 proxy. Each connection chooses its destination.",
                                 "把浏览器或客户端指向本机 SOCKS5，每个请求可选择不同目标。")
         }
@@ -143,6 +143,17 @@ extension Forwarding {
         case .local: L10n.text("Copy address", "复制地址")
         case .remote: L10n.text("Copy server address", "复制服务器地址")
         case .dynamic: L10n.text("Copy proxy address", "复制代理地址")
+        }
+    }
+}
+
+extension ForwardStatus {
+    var displayLabel: String {
+        switch self {
+        case .idle: L10n.text("Disconnected", "已断开")
+        case .pending: L10n.text("Connecting", "连接中")
+        case .active: L10n.text("Ready", "已就绪")
+        case .failed: L10n.text("Failed", "连接失败")
         }
     }
 }

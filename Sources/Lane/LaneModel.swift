@@ -116,9 +116,9 @@ final class LaneModel {
     /// A connection is started only after persistence succeeds.
     func save(_ tunnel: Tunnel, connect: Bool) throws {
         let previous = try store.save(tunnel)
-        manager.tunnelDidChange(tunnel, previous: previous)
         agents.libraryChanged()
-        if connect, manager.runtimes[tunnel.id]?.desiredOn != true { manager.connect(tunnel.id) }
+        manager.tunnelDidChange(tunnel, previous: previous)
+        if connect, !manager.keepsConnected(tunnel.id) { manager.connect(tunnel.id) }
         query = ""
         selection = .managed(tunnel.id)
         editor = nil
@@ -228,7 +228,7 @@ final class LaneModel {
         if let failed = store.tunnels.last, let rule = failed.forwardings.first {
             let message = L10n.text("Local port 8080 is already in use.", "本机端口 8080 已被占用。")
             manager.runtime(failed.id).applyDemo(state: .failed(message), forwardStatus: [rule.id: .failed(message)],
-                                                  logs: [(.error, message)], lastError: message)
+                                                  logs: [(.error, message)], lastError: message, failureKind: .portInUse)
         }
         discovered = DemoContent.externalSessions
     }
