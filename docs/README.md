@@ -40,6 +40,9 @@ swift test
 
 | 想了解什么 | 去哪里看 |
 | --- | --- |
+| 迭代做到哪一步，怎样验收 | [迭代任务清单](08-iteration-checklist.md) |
+| 下一版优先解决哪些问题 | [全项目审查](07-project-review.md) |
+| 怎样打包、发布并走查真机 | [发布验收](09-release-verification.md) |
 | Porthole 已经做对了什么，哪些地方值得改 | [上游分析与源码依据](01-porthole-analysis.md) |
 | 日常怎样连接、复制地址和处理失败 | [产品与交互方案](02-product-design.md) |
 | 终端或其他工具启动的 SSH 隧道能看到多少 | [本机发现与识别范围](02-product-design.md#本机发现) |
