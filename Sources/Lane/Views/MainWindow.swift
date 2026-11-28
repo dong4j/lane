@@ -123,23 +123,13 @@ struct MainWindow: View {
     }
 
     private var agentActivityButton: some View {
-        let pending = model.agents.pending.count
-        return Button { model.showingAgentActivity = true } label: {
-            HStack(spacing: 7) {
-                Label(L10n.text("Agent Activity", "Agent 活动"), systemImage: "point.3.connected.trianglepath.dotted")
-                    .font(.callout.weight(.medium))
-                Spacer()
-                if pending > 0 {
-                    Text(pending.formatted()).font(.caption.weight(.semibold)).monospacedDigit()
-                        .foregroundStyle(style.warning)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(style.warningFill, in: Capsule())
-                        .accessibilityLabel(L10n.text("\(pending) awaiting approval", "\(pending) 条待审批"))
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .contentShape(Rectangle())
+        Button { model.showingAgentActivity = true } label: {
+            Label(L10n.text("Agent Activity", "Agent 活动"), systemImage: "point.3.connected.trianglepath.dotted")
+                .font(.callout.weight(.medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .frame(height: 30)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .modifier(LaneHoverHighlight())

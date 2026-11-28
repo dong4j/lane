@@ -56,7 +56,7 @@ struct LaneMenuBar: View {
         let tunnels = model.store.tunnels
         let sessions = model.externalSessions
         return VStack(spacing: 10) {
-            if !model.agents.pending.isEmpty || !model.agents.active.isEmpty {
+            if !model.agents.active.isEmpty {
                 agentGroup
             }
             if !tunnels.isEmpty {
@@ -201,26 +201,9 @@ struct LaneMenuBar: View {
     }
 
     private var agentGroup: some View {
-        let pending = model.agents.pending.count
         let leases = model.agents.active
         return VStack(spacing: 3) {
-            section(L10n.text("Agent Activity", "Agent 活动"), value: L10n.text("\(leases.count) active", "\(leases.count) 条进行中"))
-            if pending > 0 {
-                Button(action: showAgentActivity) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bell.badge").accessibilityHidden(true)
-                        Text(L10n.text("\(pending) awaiting approval", "\(pending) 条待审批")).fontWeight(.medium)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.caption).accessibilityHidden(true)
-                    }
-                    .foregroundStyle(style.warning)
-                    .padding(.horizontal, 9).frame(height: 31)
-                    .background(style.warningFill, in: RoundedRectangle(cornerRadius: 7))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 7)
-            }
+            section(L10n.text("Agent Activity", "Agent 活动"), value: L10n.text("\(leases.count) active", "\(leases.count) 条使用中"))
             ForEach(leases) { lease in
                 HStack(spacing: 5) {
                     Button(action: showAgentActivity) {
@@ -257,7 +240,7 @@ struct LaneMenuBar: View {
                         }
                     }
                     .buttonStyle(LaneButtonStyle())
-                    .accessibilityLabel(L10n.text("End lease for \(lease.clientName)", "结束 \(lease.clientName) 的申请"))
+                    .accessibilityLabel(L10n.text("End lease for \(lease.clientName)", "结束 \(lease.clientName) 的使用"))
                 }
                 .padding(.horizontal, 7)
             }

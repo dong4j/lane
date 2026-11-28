@@ -59,11 +59,6 @@ final class LaneModel {
         openMainWindow?()
     }
 
-    func showAgentActivity() {
-        showMainWindow()
-        showingAgentActivity = true
-    }
-
     var externalSessions: [ExternalSession] {
         discovered.filter { !manager.runningPIDs.contains($0.id) }
     }

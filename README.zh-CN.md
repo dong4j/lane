@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Lane</h1>
 <p align="center"><strong>macOS 原生 SSH 隧道管理工具</strong></p>
-<p align="center">平时从菜单栏连接和复制地址。要配置转发、查看已有隧道或审批 Agent 申请时，再打开主窗口。</p>
+<p align="center">平时从菜单栏连接和复制地址。打开主窗口可配置转发、查看已有隧道和 Agent 活动。</p>
 <p align="center">
   <a href="README.md">English</a> ·
   <a href="#安装">安装</a> ·
@@ -27,9 +27,7 @@
 - **让 Agent 通过 MCP 申请本地转发。** 开启 Agent 接入并复制客户端配置，即可在 Lane 里查看申请、结束连接并追溯历史。
 - **继续使用现有配置。** 支持预览导入 `~/.ssh/config`、Lane 或 Porthole 备份，以及兼容的 Codinn 导出。Lane 使用 OpenSSH，已保存的凭据由 macOS 钥匙串管理。
 
-| 菜单栏 | Agent 审批 |
-| --- | --- |
-| <img src="docs/screenshots/menu.zh-CN.png" width="294" alt="Lane 菜单栏面板，列出已保存的隧道和本机发现的会话"> | <img src="docs/screenshots/agent-approval.zh-CN.png" width="430" alt="Lane Agent 活动展示本机入口、SSH 主机、目标服务和批准或拒绝按钮"> |
+<img src="docs/screenshots/menu.zh-CN.png" width="294" alt="Lane 菜单栏面板，列出已保存的隧道和本机发现的会话">
 
 截图来自 Lane 的原生界面，使用演示数据。应用支持浅色、深色、英文和简体中文。
 
@@ -53,7 +51,7 @@ make run
 
 打开「设置 → Agent 接入」，开启总开关后复制并运行 **Codex** 或 **Claude Code** 的命令。其他支持本机 stdio 的客户端可以使用「通用 MCP」复制完整 JSON 配置。
 
-Agent 接入默认关闭。开启后，Agent 可申请使用符合条件的已保存本机环回转发；临时目标和外部入口仍需在 Lane 审批。关闭开关会结束 Agent 的申请。[接入与工具说明](docs/06-agent-mcp.md)
+Agent 接入默认关闭。开启后，Agent 可使用已保存的环回转发、通过已配置的 SSH 主机建立临时环回转发，或引用已核实的外部入口。在「Agent 活动」中可查看当前会话和历史记录。关闭开关会结束当前 Agent 会话。[接入与工具说明](docs/06-agent-mcp.md)
 
 ## 贡献与许可
 

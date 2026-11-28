@@ -258,28 +258,41 @@ struct ManagedOpenSSHTests {
         #expect(access.history.first?.id == expiring.id)
         #expect(access.history.first?.state == .expired)
 
-        let temporaryArgs = AgentToolArguments(kind: .temporary, idempotencyKey: "conflict", purpose: "Verify port conflict audit",
-                                               profileID: profile.id, listenPort: fixture.externalPorts[0],
+        var temporaryArgs = AgentToolArguments(kind: .temporary, idempotencyKey: "temporary-route", purpose: "Verify temporary forwarding",
+                                               profileID: profile.id, listenPort: fixture.localPort,
                                                targetHost: "127.0.0.1", targetPort: fixture.webPort)
+        let temporary = try #require(try await call(first, .request, temporaryArgs).lease)
+        #expect(temporary.state == .connecting)
+        let temporaryRuntime = try #require(manager.runtimes.values.first)
+        try await waitFor { temporaryRuntime.state.isConnected || temporaryRuntime.state.isFailure }
+        try #require(temporaryRuntime.state.isConnected, "SSH output: \(temporaryRuntime.logs.map(\.message).joined(separator: "\n"))")
+        let temporaryLookup = AgentToolArguments(leaseID: temporary.id)
+        #expect(try await call(first, .status, temporaryLookup).lease?.address == "127.0.0.1:\(fixture.localPort)")
+        #expect(try request(["http://127.0.0.1:\(fixture.localPort)/temporary"]) == "lane-fixture")
+        #expect(try await call(first, .release, temporaryLookup).lease?.state == .released)
+        try await waitFor { temporaryRuntime.state == .off }
+
+        temporaryArgs.idempotencyKey = "conflict"
+        temporaryArgs.listenPort = fixture.externalPorts[0]
+        temporaryArgs.purpose = "Verify port conflict audit"
         let blocked = try #require(try await call(first, .request, temporaryArgs).lease)
-        #expect(blocked.state == .pendingApproval)
-        #expect(manager.runningPIDs.isEmpty)
-        try await access.approve(blocked.id)
+        #expect(blocked.state == .connecting)
+        #expect(blocked.address == nil)
         try await waitFor { access.history.first?.id == blocked.id }
         #expect(access.history.first?.state == .failed)
-        #expect(access.history.first?.events.map(\.action) == [.requested, .approved, .failed])
+        #expect(access.history.first?.events.map(\.action) == [.requested, .authorized, .failed])
 
         var externalArgs = AgentToolArguments(kind: .external, idempotencyKey: "external", purpose: "Reuse external loopback")
         externalArgs.externalAddress = "127.0.0.1:\(fixture.externalPorts[0])"
         let external = try #require(try await call(first, .request, externalArgs).lease)
-        #expect(external.state == .pendingApproval)
-        #expect(external.address == nil)
-        try await access.approve(external.id)
+        #expect(external.state == .ready)
+        #expect(external.address == externalArgs.externalAddress)
+        #expect(manager.runningPIDs.isEmpty)
         let externalLookup = AgentToolArguments(leaseID: external.id)
         #expect(try await call(first, .status, externalLookup).lease?.state == .ready)
         #expect(try await call(first, .release, externalLookup).lease?.state == .released)
         #expect(try request(["http://127.0.0.1:\(fixture.externalPorts[0])/agent-external"]) == "lane-fixture")
-        #expect(access.history.first?.events.map(\.action) == [.requested, .approved, .reused, .released])
+        #expect(access.history.first?.events.map(\.action) == [.requested, .authorized, .reused, .released])
     }
 
     /// An opt-in client can exercise the exact JSON users get from Settings against this fixture.

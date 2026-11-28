@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 import LaneCore
 
-/// Local Agent policy, approved routes, and the state recorded for each lease.
+/// The local identity used to authorize calls and attribute their audit events.
 struct AgentClient: Codable, Identifiable, Sendable {
     let id: UUID
     let name: String
@@ -107,8 +107,9 @@ struct AgentLeaseInput: Codable, Equatable, Sendable {
     let ttl: Int
 }
 
-/// The audit stores routing metadata and decisions. SSH credentials and process output stay elsewhere.
+/// One lease stores route metadata and the audit trail across app restarts.
 struct AgentLease: Codable, Identifiable, Sendable {
+    // Keep the former approval states, actions, and reasons decodable for existing audit files.
     enum State: String, Codable, Sendable {
         case pendingApproval = "pending_approval"
         case connecting, ready, reconnecting, denied, failed, released, expired, ended
@@ -158,8 +159,8 @@ struct AgentLease: Codable, Identifiable, Sendable {
     let profileID: UUID?
     let fingerprint: String?
     let external: AgentExternalEvidence?
-    var state: State = .pendingApproval
-    var waitUntil: Date
+    var state: State
+    let waitUntil: Date
     var expiresAt: Date?
     var reusesExistingConnection = false
     var events: [Event]

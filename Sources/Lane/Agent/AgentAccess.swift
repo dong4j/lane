@@ -17,14 +17,12 @@ final class AgentAccess {
     @ObservationIgnored private var monitor: Task<Void, Never>?
     @ObservationIgnored private var nextDiscovery = Date.distantPast
     @ObservationIgnored private var isClosing = false
-    @ObservationIgnored var approvalNeeded: (() -> Void)?
     private var connections: [AgentPreparedRoute.Key: Connection] = [:]
     private(set) var ledger = AgentLedger()
     private(set) var storageError = false
     private(set) var serviceError = false
 
     var available: Bool { files != nil && !storageError && !serviceError }
-    var pending: [AgentLease] { ledger.leases.reversed().filter { $0.state == .pendingApproval } }
     var active: [AgentLease] { ledger.leases.reversed().filter { $0.state.isOpen && $0.state != .pendingApproval } }
     var history: [AgentLease] { ledger.leases.reversed().filter { !$0.state.isOpen } }
 
@@ -211,38 +209,6 @@ final class AgentAccess {
         }
     }
 
-    /// A native approval applies only to the exact route shown on the pending card.
-    func approve(_ id: UUID) async throws {
-        try reconcile()
-        guard var lease = lease(id), lease.state == .pendingApproval else { return }
-        if let evidence = lease.external {
-            let matches = try await externalEvidence(at: evidence.route.listenAddress) == evidence
-            try reconcile()
-            guard let fresh = self.lease(id), fresh.state == .pendingApproval else { return }
-            lease = fresh
-            if matches {
-                let date = Date()
-                lease.move(to: .connecting, action: .approved, at: date)
-                lease.makeReady(action: .reused, at: date)
-            } else {
-                lease.move(to: .failed, action: .failed, at: Date(), reason: .externalGone)
-            }
-            try save(lease)
-        } else if let route = prepared(lease.input.target), route.key == lease.connectionKey {
-            try activate(lease, route: route, action: .approved)
-        } else {
-            lease.move(to: .failed, action: .failed, at: Date(), reason: .routeChanged)
-            try save(lease)
-        }
-    }
-
-    func deny(_ id: UUID) throws {
-        try reconcile()
-        guard var lease = lease(id), lease.state == .pendingApproval else { return }
-        lease.move(to: .denied, action: .denied, at: Date(), reason: .userDenied)
-        try save(lease)
-    }
-
     func end(_ id: UUID) throws {
         try reconcile()
         guard var lease = lease(id), lease.state.isOpen else { return }
@@ -283,30 +249,24 @@ final class AgentAccess {
             if case .external = input.target { throw AgentToolError.externalGone }
             throw AgentToolError.routeChanged
         }
-        let date = Date()
-        let lease = AgentLease(id: UUID(), clientID: client.id, clientName: client.name, requestKey: key, input: input, route: route,
+        let now = Date()
+        var lease = AgentLease(id: UUID(), clientID: client.id, clientName: client.name, requestKey: key, input: input, route: route,
                                profileID: managed?.key.profileID, fingerprint: managed?.key.fingerprint, external: external,
-                               waitUntil: date.addingTimeInterval(300), events: [.init(at: date, action: .requested, reason: nil)])
-        if case .shared = input.target, let managed {
-            try activate(lease, route: managed, action: .authorized)
-        } else {
+                               state: .connecting, waitUntil: now.addingTimeInterval(120),
+                               events: [.init(at: now, action: .requested, reason: nil),
+                                        .init(at: now, action: .authorized, reason: nil)])
+        if let managed {
+            let existing = connections[managed.key] ?? manualConnection(for: managed)
+            lease.reusesExistingConnection = existing != nil
+            // Persist the audit before starting an SSH process.
             try save(lease)
-            approvalNeeded?()
+            connections[managed.key] = existing ?? Connection(runtime: manager.connectAgentRoute(managed), ruleID: managed.rule.id)
+            try reconcile(at: now)
+        } else {
+            lease.makeReady(action: .reused, at: now)
+            try save(lease)
         }
         return self.lease(lease.id) ?? lease
-    }
-
-    private func activate(_ request: AgentLease, route: AgentPreparedRoute, action: AgentLease.Action) throws {
-        let existing = connections[route.key] ?? manualConnection(for: route)
-        var lease = request
-        let now = Date()
-        lease.waitUntil = now.addingTimeInterval(120)
-        lease.reusesExistingConnection = existing != nil
-        lease.move(to: .connecting, action: action, at: now)
-        // Persist approval first. A failed audit write must never open a listener.
-        try save(lease)
-        connections[route.key] = existing ?? Connection(runtime: manager.connectAgentRoute(route), ruleID: route.rule.id)
-        try reconcile(at: now)
     }
 
     private func manualConnection(for route: AgentPreparedRoute) -> Connection? {
@@ -403,10 +363,6 @@ final class AgentAccess {
     private func update(_ lease: inout AgentLease, at now: Date) {
         if let expiresAt = lease.expiresAt, now >= expiresAt {
             lease.move(to: .expired, action: .expired, at: now)
-        } else if lease.state == .pendingApproval {
-            if now >= lease.waitUntil {
-                lease.move(to: .expired, action: .expired, at: now, reason: .approvalTimedOut)
-            }
         } else if lease.external == nil {
             guard let key = lease.connectionKey, let connection = connections[key] else {
                 lease.move(to: .failed, action: .failed, at: now, reason: .sshFailed)
@@ -437,7 +393,7 @@ final class AgentAccess {
     }
 
     private func collectUnusedConnections() {
-        let inUse = Set(ledger.leases.filter { $0.state.isOpen && $0.state != .pendingApproval }.compactMap(\.connectionKey))
+        let inUse = Set(active.compactMap(\.connectionKey))
         for key in connections.keys.filter({ !inUse.contains($0) }) {
             if let connection = connections.removeValue(forKey: key), connection.runtime.isAgentOwned {
                 connection.runtime.stop()

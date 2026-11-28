@@ -23,8 +23,8 @@ enum AgentTool: String, Codable, CaseIterable, Sendable {
             required = []
         case .request:
             description = """
-                Request a time-limited local SSH forwarding lease. Use a shared rule ID from lane_list, or request approval for a \
-                temporary destination through a saved SSH profile or a known external loopback address. Use lane_status until ready \
+                Request a time-limited local SSH forwarding lease. Choose a shared rule from lane_list, a temporary destination \
+                through a saved SSH profile, or a verified external loopback listener. Use lane_status until ready \
                 and lane_release when the work is done.
                 """
             properties = [
@@ -203,7 +203,7 @@ struct AgentToolResult: Codable, Sendable {
         enum CodingKeys: String, CodingKey { case id, profileID = "profile_id", name, sshHost = "ssh_host", destination }
     }
 
-    /// A saved SSH profile can be used for an approved temporary route even when it has no shared rules.
+    /// A saved SSH profile can be used for a temporary route even when it has no shared rules.
     struct Profile: Codable, Sendable {
         let id: UUID
         let name: String

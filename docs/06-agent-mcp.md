@@ -2,7 +2,7 @@
 
 [English](agent-mcp.md) · [主页](../README.zh-CN.md)
 
-Lane 可以为本机 Agent 建立 SSH 本地转发。Agent 申请有期限的使用权，拿到就绪地址后继续工作，完成时释放。用户在主窗口审批和查历史，也可以从菜单栏复制地址或结束一份申请。
+Lane 可以为本机 Agent 建立 SSH 本地转发。Agent 请求限时使用隧道，拿到就绪地址后继续工作，完成时释放。用户可在「Agent 活动」中查看当前会话和历史，也可从菜单栏复制地址或结束使用。
 
 ## 接入客户端
 
@@ -10,7 +10,7 @@ Lane 可以为本机 Agent 建立 SSH 本地转发。Agent 申请有期限的使
 2. 复制并运行 Codex 或 Claude Code 的接入命令；其他支持本机 stdio 的客户端使用「通用 MCP」配置。
 3. 让客户端重新加载 MCP 配置，并调用 `lane_list` 检查接入。Lane 会自动准备客户端身份，无需手动配对或分别开启权限。
 
-开启后，Agent 可申请使用符合条件的已保存环回 `-L` 规则；临时目标和外部入口仍需审批。关闭开关会阻止 Agent 工具调用并结束进行中的 Agent 申请。
+开启后，Agent 可使用符合条件的已保存环回 `-L` 规则、通过已配置的 SSH 主机建立临时环回转发，或引用已核实的外部入口。关闭开关会阻止 Agent 工具调用并结束当前 Agent 会话。
 
 ### 通用 MCP 配置
 
@@ -46,7 +46,7 @@ Lane 在 MCP 初始化时提供使用说明。也可以在项目指令中要求 
 | `lane_status` | 以 `lease_id` 查询本配对的申请。状态为 `ready` 时，`lease.address` 可用于连接，`expires_at` 为到期时间。 |
 | `lane_release` | 以 `lease_id` 释放本配对的申请，可重复调用。 |
 
-共享规则示例中的 `rule_id` 取自 `lane_list`。`project` 可选，`purpose` 会显示给审批人。两个字段分别记录客户端提供的项目和用途，填写时应排除凭据。
+共享规则示例中的 `rule_id` 取自 `lane_list`。`project` 可选。这两个字段分别记录客户端提供的项目和用途，供查看活动和历史时参考，填写时应排除凭据。
 
 ```json
 {
@@ -59,16 +59,16 @@ Lane 在 MCP 初始化时提供使用说明。也可以在项目指令中要求 
 }
 ```
 
-- **临时目标**用 `kind: "temporary"`，从 `lane_list` 返回的 `profiles` 中选一个 ID 填入 `profile_id`，再填 `listen_port`、`target_host` 和 `target_port`。没有环回规则的已保存配置也可选择，认证沿用该 SSH 配置。监听默认 `127.0.0.1`，可设 `listen_host: "::1"`。审批卡会显示本机入口、SSH 主机和 SSH 主机要访问的目标。
-- **外部入口**用 `kind: "external"`，填 `external_address`，例如 `127.0.0.1:3113`。Lane 要能在本机观察到监听，并把它与外部 SSH 的 `-L` 参数对应。每次申请都需确认。释放、到期或人工结束只解除引用，外部 SSH 继续由原进程管理。
+- **临时目标**用 `kind: "temporary"`，从 `lane_list` 返回的 `profiles` 中选一个 ID 填入 `profile_id`，再填 `listen_port`、`target_host` 和 `target_port`。没有环回规则的已保存配置也可选择，认证沿用该 SSH 配置。监听默认 `127.0.0.1`，可设 `listen_host: "::1"`。
+- **外部入口**用 `kind: "external"`，填 `external_address`，例如 `127.0.0.1:3113`。Lane 要能在本机观察到监听，并把它与外部 SSH 的 `-L` 参数对应。释放、到期或人工结束只解除引用，外部 SSH 继续由原进程管理。
 
 申请只启动选中的环回 `-L` 规则。共享和临时申请指向同一 SSH 配置及转发路径时，可以共用已建立的连接。最后一份申请结束后，Lane 回收由 Agent 发起的临时连接。已经手动连接并显式绑定到同一环回入口的隧道可以被复用，由用户继续管理。转发路径或 SSH 配置改动后，Lane 会结束受影响的申请并刷新可用规则。
 
-申请待审批时返回 `pending_approval`。审批后进入 `connecting`，重连期间返回 `reconnecting`。等待批准最多 5 分钟，首次连接最多 2 分钟。TTL 默认 15 分钟，从首次就绪开始计时，支持 1 到 3,600 秒。就绪表示 OpenSSH 已确认监听，目标服务是否可用由客户端按实际任务验证。
+新建连接时先返回 `connecting`，首次连接最多等待 2 分钟，重连期间返回 `reconnecting`。TTL 默认 15 分钟，从首次就绪开始计时，支持 1 到 3,600 秒。就绪表示 OpenSSH 已确认监听，目标服务是否可用由客户端按实际任务验证。
 
 ## 审计和排障
 
-- 从主窗口或菜单栏打开「Agent 活动」。可审批、拒绝、复制已就绪地址、人工结束。历史支持按客户端、项目、地址或申请编号查找，并可展开查看申请、授权、连接、复用、重连和结束原因。
+- 从主窗口或菜单栏打开「Agent 活动」。在「使用中」可复制已就绪地址或结束使用。「历史」支持按客户端、项目、地址或申请编号查找，展开可查看请求、授权、连接、复用、重连和结束原因。
 - 记录保存在 `~/Library/Application Support/Lane/Agent/activity.json`。SSH 凭据仍由 macOS 钥匙串及 OpenSSH 管理。Agent 审计只写管理动作和路径元数据。配对密钥、业务流量和 OpenSSH 运行日志分开放置。
 - 正常退出会结束当前申请并关闭 Lane 管理的 SSH。重启可查询历史，上一进程留下的未结申请会标为已结束。异常退出后若仍观察到 SSH 监听，可以在「本机发现」核查。
 - `read_only` 表示 Agent 接入未开启。`not_paired` 表示客户端身份文件缺失或无效，需要重新复制接入配置。`lane_unavailable` 表示需要在本机启动 Lane。`route_unavailable` 时核对已保存的规则或 SSH 配置。`external_unverified` 时在「本机发现」核对监听和转发参数。

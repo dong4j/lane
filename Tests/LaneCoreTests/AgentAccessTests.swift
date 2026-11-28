@@ -73,47 +73,67 @@ struct AgentAccessTests {
     }
 
     @Test
-    func temporaryRoutesRequireApprovalAndOnlyValidLoopbackTCPRoutesAreAccepted() async throws {
+    func temporaryRoutesUseTheGlobalSwitchAndOnlyValidLoopbackTCPRoutesAreAccepted() async throws {
         let rig = try Rig()
         defer { rig.clean() }
         let remoteOnly = Tunnel(name: "Preview", host: "preview", forwardings: [
             Forwarding(kind: .remote, port: 8080, targetHost: "localhost", targetPort: 8080),
         ])
         try rig.manager.store.save(remoteOnly)
-        let credential = try rig.pair("Test client", canRequest: true)
+        let credential = try rig.pair("Test client")
+        let request = AgentToolArguments(kind: .temporary, idempotencyKey: "temp", purpose: "Preview",
+                                         project: "Example", ttlSeconds: 2, profileID: remoteOnly.id,
+                                         listenPort: 4001, targetHost: "::1", targetPort: 8080)
+        #expect(await rig.call(credential, .request, request).error?.code == "read_only")
+        #expect(rig.manager.runtimes.isEmpty)
+
+        try rig.access.setRequestsEnabled(true)
         let listing = await rig.call(credential, .list)
         #expect(listing.rules?.map(\.profileID) == [rig.profile.id])
-        let profileID = try #require(listing.profiles?.first { $0.name == "Preview" }?.id)
-        #expect(profileID == remoteOnly.id)
-        var request = AgentToolArguments(kind: .temporary, idempotencyKey: "temp", purpose: "Preview",
-                                        project: "Example", ttlSeconds: 2, profileID: profileID,
-                                        listenHost: "0.0.0.0", listenPort: 4001, targetHost: "localhost", targetPort: 8080)
-        #expect(await rig.call(credential, .request, request).error?.code == "invalid_arguments")
-        request.listenHost = "127.0.0.1"
-        request.targetHost = "/var/run/service.sock"
-        #expect(await rig.call(credential, .request, request).error?.code == "invalid_arguments")
-        request.targetHost = "::1"
+        #expect(listing.profiles?.first { $0.name == "Preview" }?.id == remoteOnly.id)
+        var invalid = request
+        invalid.listenHost = "0.0.0.0"
+        #expect(await rig.call(credential, .request, invalid).error?.code == "invalid_arguments")
+        invalid = request
+        invalid.targetHost = "/var/run/service.sock"
+        #expect(await rig.call(credential, .request, invalid).error?.code == "invalid_arguments")
+        invalid = request
+        invalid.profileID = UUID()
+        #expect(await rig.call(credential, .request, invalid).error?.code == "route_unavailable")
 
-        let approval = try #require(await rig.call(credential, .request, request).lease)
-        #expect(approval.state == .pendingApproval)
-        #expect(approval.address == nil)
-        #expect(rig.manager.runtimes.isEmpty)
-        #expect(rig.access.pending.first?.route.destination == "[::1]:8080")
-        try await rig.access.approve(approval.id)
-        let ready = try #require(await rig.call(credential, .status, AgentToolArguments(leaseID: approval.id)).lease)
+        let ready = try #require(await rig.call(credential, .request, request).lease)
         #expect(ready.state == .ready)
         #expect(ready.address == "127.0.0.1:4001")
+        #expect(rig.access.active.first?.route.destination == "[::1]:8080")
 
         let expiresAt = try #require(ready.expiresAt)
         try rig.access.reconcile(at: expiresAt.addingTimeInterval(0.01))
-        #expect(rig.access.history.first?.events.map(\.action) == [.requested, .approved, .connected, .expired])
+        #expect(rig.access.active.isEmpty)
+        #expect(rig.access.history.first?.events.map(\.action) == [.requested, .authorized, .connected, .expired])
         #expect(rig.manager.runtimes.isEmpty)
+    }
 
-        request.idempotencyKey = "denied"
-        let denied = try #require(await rig.call(credential, .request, request).lease)
-        try rig.access.deny(denied.id)
-        #expect(await rig.call(credential, .status, AgentToolArguments(leaseID: denied.id)).lease?.state == .denied)
-        #expect(rig.manager.runtimes.isEmpty)
+    @Test
+    func previouslyDeniedRequestsRemainInHistory() async throws {
+        let rig = try Rig()
+        defer { rig.clean() }
+        let client = try rig.pair("Test client", canRequest: true)
+        let request = AgentToolArguments(kind: .temporary, idempotencyKey: "legacy", purpose: "Test",
+                                         profileID: rig.profile.id, listenPort: 4001, targetHost: "localhost", targetPort: 8080)
+        let lease = try #require(await rig.call(client, .request, request).lease)
+        var priorLedger = rig.access.ledger
+        let previous = try #require(priorLedger.leases.indices.first)
+        priorLedger.leases[previous].expiresAt = nil
+        priorLedger.leases[previous].events.removeAll { $0.action != .requested }
+        priorLedger.leases[previous].move(to: .denied, action: .denied, at: Date(), reason: .userDenied)
+        try rig.files.writeLedger(priorLedger)
+
+        let reopened = AgentAccess(manager: TunnelManager(store: rig.manager.store, demo: true), files: rig.files)
+        #expect(reopened.history.first?.id == lease.id)
+        #expect(reopened.history.first?.state == .denied)
+        #expect(reopened.history.first?.reason == .userDenied)
+        #expect(reopened.history.first?.events.map(\.action) == [.requested, .denied])
+        #expect(reopened.active.isEmpty)
     }
 
     @Test

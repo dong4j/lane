@@ -37,8 +37,8 @@ struct AgentSettings: View {
                 Text(L10n.text("Agent Access", "Agent 接入"))
             } footer: {
                 Text(L10n.text(
-                    "Saved loopback forwards are available. Temporary and external routes need approval. Switching off ends Agent leases.",
-                    "已保存的环回转发可直接申请。临时目标和外部入口需审批。关闭后结束 Agent 的申请。"
+                    "Agents can use saved loopback forwards, open temporary forwards through saved SSH hosts, or reuse verified external listeners. Turning this off ends active Agent sessions.",
+                    "开启后，Agent 可使用已保存的环回转发、通过已配置的 SSH 主机建立临时转发，或引用已核实的外部入口。关闭后结束当前 Agent 会话。"
                 ))
                 .font(.caption)
                 .foregroundStyle(.secondary)

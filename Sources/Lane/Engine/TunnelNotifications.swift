@@ -4,8 +4,6 @@ import UserNotifications
 /// Bridges managed tunnel events to macOS notifications for a packaged Lane app.
 @MainActor
 enum TunnelNotifications {
-    nonisolated static let agentApproval = "site.dong4j.lane.agent-approval"
-
     static var available: Bool {
         Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
     }
@@ -20,12 +18,11 @@ enum TunnelNotifications {
     }
 
     /// System authorization still controls delivery when the preference is enabled.
-    static func post(title: String, body: String = "", category: String = "") {
+    static func post(title: String, body: String = "") {
         guard available else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.categoryIdentifier = category
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }

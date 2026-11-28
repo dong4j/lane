@@ -10,7 +10,7 @@ Lane can open time-limited SSH local forwards for an Agent on the same Mac. The 
 2. Copy and run the **Codex** or **Claude Code** command, or copy the **Generic MCP** configuration into another local stdio client.
 3. Reload the client's MCP configuration and call `lane_list` to verify the connection. Lane prepares the local client identity automatically; no separate pairing or per-client permission is needed.
 
-While access is on, Agents can request any eligible saved loopback `-L` rule. Temporary destinations and external listeners still require approval. Turning access off blocks Agent tool calls and ends outstanding Agent leases.
+While access is on, Agents can use any eligible saved loopback `-L` rule, open a temporary loopback forward through a saved SSH profile, or reference a verified external listener. Turning access off blocks Agent tool calls and ends outstanding Agent leases.
 
 ### Generic stdio setup
 
@@ -55,16 +55,16 @@ For a shared rule, use an ID from `lane_list`. Repeat the same `idempotency_key`
 }
 ```
 
-- **Temporary destination.** Use `kind: "temporary"`, an ID from `lane_list` → `profiles` as `profile_id`, plus `listen_port`, `target_host`, and `target_port`. A saved profile can be selected even if it has no eligible loopback rule. The listener defaults to `127.0.0.1`. For IPv6, set `listen_host` to `::1`. The approval shows the local address, SSH host, and destination.
-- **External listener.** Use `kind: "external"` and `external_address`, for example `127.0.0.1:3113`. Lane must observe a matching loopback `-L` listener. Approve each request. Releasing the lease ends the reference while the original process retains ownership of the listener.
+- **Temporary destination.** Use `kind: "temporary"`, an ID from `lane_list` → `profiles` as `profile_id`, plus `listen_port`, `target_host`, and `target_port`. A saved profile can be selected even if it has no eligible loopback rule. The listener defaults to `127.0.0.1`. For IPv6, set `listen_host` to `::1`.
+- **External listener.** Use `kind: "external"` and `external_address`, for example `127.0.0.1:3113`. Lane must observe a matching loopback `-L` listener. Releasing the lease ends the reference while the original process retains ownership of the listener.
 
 A request opens only the selected loopback `-L` rule. Compatible requests can share the same established forward. The last lease closes a forward started for Agents. Manually connected tunnels remain open under the user's control. Changing a saved route ends affected Agent leases and refreshes the available rule.
 
-Approval can take up to five minutes, and initial connection up to two minutes. The default lease lasts 15 minutes from first readiness. Supported durations are 1 to 3,600 seconds. While the route is reconnecting, wait for `ready` before using the address again.
+New SSH connections start in `connecting` and have up to two minutes to become ready. The default lease lasts 15 minutes from first readiness. Supported durations are 1 to 3,600 seconds. While the route is reconnecting, wait for `ready` before using the address again.
 
 ## Review and troubleshoot
 
-Open **Agent Activity** from the window or menu bar to approve, deny, copy a ready address, or end a lease. History is searchable by pairing, project, address, and request ID. It includes approval, connection, reuse, and end events.
+Open **Agent Activity** from the window or menu bar. In **Active**, copy a ready address or end a lease. Search **History** by client, project, address, or request ID to review authorization, connection, reuse, and end events.
 
 The audit is local under `~/Library/Application Support/Lane/Agent/activity.json`. It contains route metadata and the client's stated purpose. Pairing credentials, SSH credentials, and forwarded traffic are stored or handled separately. Lane ends outstanding leases on quit and marks any left from an interrupted run as ended after restart.
 

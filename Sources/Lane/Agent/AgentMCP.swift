@@ -18,7 +18,7 @@ enum AgentMCP {
     private static let capabilities: [String: [String: Bool]] = ["tools": [:]]
     static let projectInstructions = """
         Use Lane MCP for new local SSH forwardings. Start with lane_list and use lane_request with a stable \
-        idempotency_key and a short purpose without secrets. Ask the user to approve temporary or external routes in Lane. \
+        idempotency_key and a short purpose without secrets. \
         Poll lane_status and use the local address only when the lease is ready. Call lane_release when done. \
         If Lane is unavailable or refuses a request, report that to the user before using another SSH workflow.
         """

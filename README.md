@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Lane</h1>
 <p align="center"><strong>SSH tunnel manager for macOS</strong></p>
-<p align="center">Connect and copy an address from the menu bar. Open the main window to configure routes, inspect existing tunnels, or review an Agent request.</p>
+<p align="center">Connect and copy an address from the menu bar. Open the main window to configure routes, inspect existing tunnels, or review Agent activity.</p>
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="#get-lane">Get Lane</a> ·
@@ -27,9 +27,7 @@
 - **Let Agents request a local forward through MCP.** Enable Agent Access and copy a setup for your client. Review who requested a route, end a lease, and look up its history in Lane.
 - **Bring existing profiles.** Preview imports from `~/.ssh/config`, Lane or Porthole backups, and compatible Codinn exports. Lane runs OpenSSH and uses macOS Keychain for saved credentials.
 
-| Menu bar | Agent approval |
-| --- | --- |
-| <img src="docs/screenshots/menu.png" width="294" alt="Lane menu bar with saved and discovered tunnels"> | <img src="docs/screenshots/agent-approval.png" width="430" alt="Lane Agent Activity showing an approval request with the local address, SSH host, and destination"> |
+<img src="docs/screenshots/menu.png" width="294" alt="Lane menu bar with saved and discovered tunnels">
 
 Screenshots show Lane's native views with sample data. The app supports light and dark appearance, English, and Simplified Chinese.
 
@@ -53,7 +51,7 @@ In Lane, choose **New Tunnel**, enter an SSH alias or hostname, and add a forwar
 
 Open **Settings → Agent** and turn on **Allow Agent access**. Copy and run the command for **Codex** or **Claude Code**, or copy the **Generic MCP** JSON configuration for another local stdio client.
 
-Agent Access is off by default. When enabled, Agents can request eligible saved loopback local forwards; temporary destinations and existing external forwards require approval in Lane. Turning it off ends Agent leases. [Setup and tool reference](docs/agent-mcp.md)
+Agent Access is off by default. Once enabled, Agents can use saved loopback forwards, open temporary loopback forwards through saved SSH hosts, or reuse verified external listeners. See current sessions and audit history in **Agent Activity**. Turning access off ends active Agent leases. [Setup and tool reference](docs/agent-mcp.md)
 
 ## Contributing and license
 

@@ -1,13 +1,12 @@
 import SwiftUI
 
-/// A single activity surface handles approvals, live leases, and persisted history.
+/// Shows live Agent use and the persisted audit in one place.
 struct AgentActivity: View {
     private enum Page { case current, history }
 
     let model: LaneModel
     @State private var page = Page.current
     @State private var query = ""
-    @State private var approving: UUID?
     @State private var error: String?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
@@ -37,7 +36,7 @@ struct AgentActivity: View {
                     .buttonStyle(LaneButtonStyle())
             }
             Picker(L10n.text("Agent activity", "Agent 活动"), selection: $page) {
-                Text(L10n.text("Requests and Active", "待审批与进行中")).tag(Page.current)
+                Text(L10n.text("Active", "使用中")).tag(Page.current)
                 Text(L10n.text("History", "历史")).tag(Page.history)
             }
             .labelsHidden()
@@ -78,59 +77,42 @@ struct AgentActivity: View {
 
     @ViewBuilder
     private var current: some View {
-        if access.pending.isEmpty, access.active.isEmpty {
-            empty(L10n.text("No Agent requests or live leases", "暂无待审批或进行中的申请"), symbol: "tray")
+        let leases = access.active
+        if leases.isEmpty {
+            empty(L10n.text("No active Agent sessions", "暂无 Agent 使用中的隧道"), symbol: "tray")
         }
-        if !access.pending.isEmpty {
-            sectionTitle(L10n.text("Awaiting Approval", "待审批"))
-            ForEach(access.pending) { lease in
-                card(lease) {
-                    HStack {
-                        if lease.external != nil {
-                            Text(L10n.text("External SSH · reference only", "外部 SSH · 仅引用"))
-                                .font(.caption).foregroundStyle(style.secondary)
+        ForEach(leases) { lease in
+            VStack(alignment: .leading, spacing: 10) {
+                leaseTitle(lease)
+                metadata(lease)
+                HStack {
+                    if let expiry = lease.expiresAt {
+                        Label {
+                            Text(expiry, style: .timer).monospacedDigit()
+                        } icon: {
+                            Image(systemName: "clock")
                         }
-                        Spacer()
-                        if approving == lease.id { ProgressView().controlSize(.small) }
-                        Button(L10n.text("Deny", "拒绝")) { perform { try access.deny(lease.id) } }
-                            .buttonStyle(LaneButtonStyle())
-                        Button(L10n.text("Approve", "批准")) { approve(lease.id) }
-                            .buttonStyle(LaneButtonStyle(kind: .primary))
+                        .font(.caption).foregroundStyle(style.secondary)
+                        .accessibilityLabel(L10n.text("Time remaining", "剩余时间"))
                     }
-                    .disabled(approving != nil)
-                }
-            }
-        }
-        if !access.active.isEmpty {
-            sectionTitle(L10n.text("Active Leases", "进行中"))
-            ForEach(access.active) { lease in
-                card(lease) {
-                    HStack {
-                        if let expiry = lease.expiresAt {
-                            Label {
-                                Text(expiry, style: .timer).monospacedDigit()
-                            } icon: {
-                                Image(systemName: "clock")
-                            }
+                    if access.borrowed(lease) || lease.external != nil {
+                        Text(lease.external != nil
+                             ? L10n.text("External SSH · reference only", "外部 SSH · 仅引用")
+                             : L10n.text("Reusing a manual tunnel", "复用手动连接"))
                             .font(.caption).foregroundStyle(style.secondary)
-                            .accessibilityLabel(L10n.text("Time remaining", "剩余时间"))
-                        }
-                        if access.borrowed(lease) || lease.external != nil {
-                            Text(lease.external != nil
-                                 ? L10n.text("External SSH · reference only", "外部 SSH · 仅引用")
-                                 : L10n.text("Reusing a manual tunnel", "复用手动连接"))
-                                .font(.caption).foregroundStyle(style.secondary)
-                        }
-                        Spacer()
-                        if lease.state == .ready {
-                            CopyAction(model: model, value: lease.route.listenAddress, key: "agent-address-\(lease.id)",
-                                       title: L10n.text("Copy Address", "复制地址"))
-                        }
-                        Button(L10n.text("End Lease", "结束申请")) { perform { try access.end(lease.id) } }
-                            .buttonStyle(LaneButtonStyle())
                     }
+                    Spacer()
+                    if lease.state == .ready {
+                        CopyAction(model: model, value: lease.route.listenAddress, key: "agent-address-\(lease.id)",
+                                   title: L10n.text("Copy Address", "复制地址"))
+                    }
+                    Button(L10n.text("End Lease", "结束使用")) { perform { try access.end(lease.id) } }
+                        .buttonStyle(LaneButtonStyle())
                 }
             }
+            .padding(12)
+            .background(style.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(style.edge).allowsHitTesting(false) }
         }
     }
 
@@ -168,17 +150,6 @@ struct AgentActivity: View {
         }
     }
 
-    private func card<Actions: View>(_ lease: AgentLease, @ViewBuilder actions: () -> Actions) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            leaseTitle(lease)
-            metadata(lease)
-            actions()
-        }
-        .padding(12)
-        .background(style.surface, in: RoundedRectangle(cornerRadius: 10))
-        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(style.edge).allowsHitTesting(false) }
-    }
-
     private func leaseTitle(_ lease: AgentLease) -> some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
@@ -187,10 +158,9 @@ struct AgentActivity: View {
             }
             Spacer()
             Text(lease.state.displayLabel).font(.caption.weight(.semibold))
-                .foregroundStyle(lease.state == .ready ? style.positive : lease.state == .pendingApproval ? style.warning : style.secondary)
+                .foregroundStyle(lease.state == .ready ? style.positive : style.secondary)
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(lease.state == .ready ? style.positiveFill : lease.state == .pendingApproval ? style.warningFill : style.control,
-                            in: Capsule())
+                .background(lease.state == .ready ? style.positiveFill : style.control, in: Capsule())
         }
     }
 
@@ -216,24 +186,10 @@ struct AgentActivity: View {
         }
     }
 
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title).font(.callout.weight(.semibold)).accessibilityAddTraits(.isHeader)
-    }
-
     private func empty(_ title: String, symbol: String) -> some View {
         Label(title, systemImage: symbol)
             .frame(maxWidth: .infinity, minHeight: 120)
             .foregroundStyle(style.secondary)
-    }
-
-    private func approve(_ id: UUID) {
-        approving = id
-        error = nil
-        Task {
-            defer { approving = nil }
-            do { try await access.approve(id) }
-            catch { self.error = error.localizedDescription }
-        }
     }
 
     private func perform(_ action: () throws -> Void) {
@@ -273,7 +229,7 @@ private extension AgentLease.Action {
     var displayLabel: String {
         switch self {
         case .requested: L10n.text("Requested", "提交申请")
-        case .authorized: L10n.text("Authorized by rule", "共享规则已授权")
+        case .authorized: L10n.text("Authorized", "已授权")
         case .approved: L10n.text("Approved", "人工批准")
         case .denied: AgentLease.State.denied.displayLabel
         case .connected: L10n.text("Listener opened", "监听已就绪")
@@ -293,7 +249,7 @@ private extension AgentLease.Reason {
         switch self {
         case .userDenied: L10n.text("Denied by you", "人工拒绝")
         case .userEnded: L10n.text("Ended by you", "人工结束")
-        case .accessDisabled: L10n.text("Request permission disabled", "申请权限已关闭")
+        case .accessDisabled: L10n.text("Agent access turned off", "Agent 接入已关闭")
         case .clientRevoked: L10n.text("Pairing revoked", "配对已撤销")
         case .routeChanged: L10n.text("Shared rule or SSH profile changed", "共享规则或 SSH 配置已变更")
         case .externalGone: L10n.text("External listener disappeared", "外部监听已消失")
