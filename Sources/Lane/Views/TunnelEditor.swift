@@ -262,15 +262,11 @@ struct TunnelEditor: View {
                           field: .identity, mono: true)
                     input(L10n.text("Rule name", "规则名称"), text: rule.name, placeholder: "PostgreSQL", field: .ruleName)
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 18) {
-                        Toggle(L10n.text("Connect when Lane opens", "启动 Lane 时连接"), isOn: $autoConnect)
-                        Toggle(L10n.text("Reconnect automatically", "自动重连"), isOn: $reconnect)
-                    }
-                    HStack(spacing: 18) {
-                        Toggle(L10n.text("Use SSH configuration", "使用 SSH 配置"), isOn: $useConfig)
-                        Toggle(L10n.text("Enable rule", "启用规则"), isOn: rule.enabled)
-                    }
+                HStack(spacing: 18) {
+                    Toggle(L10n.text("Connect at launch", "启动 Lane 时连接"), isOn: $autoConnect)
+                    Toggle(L10n.text("Auto-reconnect", "自动重连"), isOn: $reconnect)
+                    Toggle(L10n.text("Use SSH config", "使用 SSH 配置"), isOn: $useConfig)
+                    Toggle(L10n.text("Enable rule", "启用规则"), isOn: rule.enabled)
                 }
                 .toggleStyle(.checkbox)
                 .font(.system(size: 12))
