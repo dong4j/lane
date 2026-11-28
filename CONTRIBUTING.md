@@ -18,7 +18,7 @@ The loopback suite runs local OpenSSH and HTTP fixtures with temporary keys. To 
 .build/Lane.app/Contents/MacOS/Lane --render-previews .build/previews -lane.language en
 ```
 
-When changing the window, editor, or menu, check both appearance modes. The [design index](docs/README.md) links to the editable prototype and interaction notes. If changing Agent access, run the loopback suite and check that the pairing, request, and release behavior still matches the [MCP guide](docs/agent-mcp.md).
+When changing the window, editor, or menu, check both appearance modes. The [design index](docs/README.md) links to the editable prototype and interaction notes. For Agent changes, run the loopback suite with the pinned official MCP SDK. For distribution changes, verify the archived app, checksum, and native interactions. The commands and checks are in the [release verification checklist](docs/09-release-verification.md).
 
 Keep pull requests focused. Explain the user-visible change and include the checks you ran. Put screenshots of UI changes in the PR description where they help explain the result.
 

@@ -3,6 +3,7 @@ name: macOS CI
 on:
   push:
     branches: [main]
+    tags: ['v[0-9]*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -10,13 +11,14 @@ on:
 permissions:
   contents: read
 
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+
 jobs:
   build:
     name: Build, test, and package
     runs-on: macos-15
     timeout-minutes: 25
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - name: Check out Lane
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,14 +51,76 @@ jobs:
       - name: Build and verify Release app
         run: |
           ./scripts/build-app.sh release
-          codesign --verify --strict .build/Lane.app
-          mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent .build/Lane.app dist/Lane-macOS-arm64.zip
+          sh scripts/package-release.sh
 
       - name: Upload Lane.app
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          path: dist/Lane-macOS-arm64.zip
+          path: .build/dist/Lane-*-macOS-arm64.zip
           archive: false
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
+
+  publish:
+    name: Sign, notarize, and publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 35
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the version tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prepare and verify the versioned app
+        run: |
+          ./scripts/build-app.sh release
+          sh scripts/package-release.sh "$GITHUB_REF_NAME"
+
+      - name: Sign and notarize Lane
+        env:
+          LANE_DEVELOPER_ID_P12: ${{ secrets.LANE_DEVELOPER_ID_P12 }}
+          LANE_DEVELOPER_ID_PASSWORD: ${{ secrets.LANE_DEVELOPER_ID_PASSWORD }}
+          LANE_NOTARY_APPLE_ID: ${{ secrets.LANE_NOTARY_APPLE_ID }}
+          LANE_NOTARY_APP_PASSWORD: ${{ secrets.LANE_NOTARY_APP_PASSWORD }}
+          LANE_NOTARY_TEAM_ID: ${{ secrets.LANE_NOTARY_TEAM_ID }}
+        run: |
+          : "${LANE_DEVELOPER_ID_P12:?Missing Developer ID certificate}"
+          : "${LANE_DEVELOPER_ID_PASSWORD:?Missing Developer ID certificate password}"
+          : "${LANE_NOTARY_APPLE_ID:?Missing notary Apple ID}"
+          : "${LANE_NOTARY_APP_PASSWORD:?Missing notary app-specific password}"
+          : "${LANE_NOTARY_TEAM_ID:?Missing notary Team ID}"
+          signing_dir=$(mktemp -d "$RUNNER_TEMP/lane-signing.XXXXXX")
+          keychain="$signing_dir/signing.keychain-db"
+          trap 'security delete-keychain "$keychain" 2>/dev/null || true; rm -rf "$signing_dir"' EXIT
+          password=$(openssl rand -hex 32)
+          printf '%s' "$LANE_DEVELOPER_ID_P12" | base64 -D > "$signing_dir/developer.p12"
+          security create-keychain -p "$password" "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security import "$signing_dir/developer.p12" -k "$keychain" -P "$LANE_DEVELOPER_ID_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          identity=$(security find-identity -v -p codesigning "$keychain" | awk '/Developer ID Application/ && !found {print $2; found=1}')
+          : "${identity:?No valid Developer ID Application identity}"
+          codesign --force --options runtime --timestamp --sign "$identity" .build/Lane.app
+          archive=$(sh scripts/package-release.sh "$GITHUB_REF_NAME")
+          xcrun notarytool submit "$archive" --wait --apple-id "$LANE_NOTARY_APPLE_ID" \
+            --password "$LANE_NOTARY_APP_PASSWORD" --team-id "$LANE_NOTARY_TEAM_ID"
+          xcrun stapler staple .build/Lane.app
+          xcrun stapler validate .build/Lane.app
+          spctl --assess --type execute --verbose=2 .build/Lane.app
+          sh scripts/package-release.sh "$GITHUB_REF_NAME"
+
+      - name: Publish the signed zip and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive=".build/dist/Lane-${GITHUB_REF_NAME#v}-macOS-arm64.zip"
+          gh release create "$GITHUB_REF_NAME" "$archive" .build/dist/SHA256SUMS.txt \
+            --verify-tag --title "Lane ${GITHUB_REF_NAME#v}" --generate-notes \
+            --notes "Requires macOS 14 or later on Apple silicon. Verify the zip with the accompanying SHA256SUMS.txt."

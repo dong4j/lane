@@ -33,9 +33,9 @@
 
 ## 安装
 
-Lane 需要 **macOS 14 或更高版本**。Apple 芯片用户可登录 GitHub，打开一次成功的 [macOS CI 构建](https://github.com/dong4j/lane/actions/workflows/macos.yml?query=branch%3Amain)，从 **Artifacts** 下载 `Lane-macOS-arm64.zip`。CI 构建采用临时签名。如果 macOS 拦截下载版，可以在本机从源码构建。
+Lane 需要 **macOS 14 或更高版本**。**Apple 芯片**的正式安装包在 [GitHub Releases](https://github.com/dong4j/lane/releases) 中发布。下载同一版本的 `Lane-<version>-macOS-arm64.zip` 和 `SHA256SUMS.txt`，运行 `shasum -a 256 -c SHA256SUMS.txt`，解压后将 `Lane.app` 移到「应用程序」。
 
-本机源码构建使用 Swift 6。可以在终端运行以下命令。
+首个版本发布前，可以使用 Swift 6 从源码构建。登录 GitHub 后也可在成功的 [macOS CI 构建](https://github.com/dong4j/lane/actions/workflows/macos.yml?query=branch%3Amain)中下载采用临时签名的测试包。
 
 ```sh
 git clone https://github.com/dong4j/lane.git

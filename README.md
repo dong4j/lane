@@ -33,9 +33,9 @@ Screenshots show Lane's native views with sample data. The app supports light an
 
 ## Get Lane
 
-Lane requires **macOS 14 or later**. On Apple silicon, sign in to GitHub, open a successful [macOS CI run](https://github.com/dong4j/lane/actions/workflows/macos.yml?query=branch%3Amain), and download `Lane-macOS-arm64.zip` from **Artifacts**. CI builds use an ad-hoc signature. If macOS blocks the downloaded build, use the source build.
+Lane requires **macOS 14 or later**. Published builds for **Apple silicon** are listed in [GitHub Releases](https://github.com/dong4j/lane/releases). Download `Lane-<version>-macOS-arm64.zip` and `SHA256SUMS.txt` from the same release. Verify the zip with `shasum -a 256 -c SHA256SUMS.txt`, unzip it, and move `Lane.app` to Applications.
 
-The source build uses Swift 6. Run these commands on your Mac.
+Before the first release, build from source with Swift 6. Signed-in contributors can also download an ad-hoc test build from a successful [macOS CI run](https://github.com/dong4j/lane/actions/workflows/macos.yml?query=branch%3Amain).
 
 ```sh
 git clone https://github.com/dong4j/lane.git
