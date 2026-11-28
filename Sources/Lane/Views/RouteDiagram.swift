@@ -93,8 +93,9 @@ struct RouteDiagram: View {
                 .font(.system(size: 12))
             Text(usage).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
-            if forwarding != nil {
-                Text(L10n.text("Connection direction", "连接发起方向"))
+            if let kind = forwarding?.kind {
+                Text(kind.listensLocally ? L10n.text("Starts on this Mac", "从本机发起")
+                    : L10n.text("Starts at the server", "从服务器发起"))
                     .font(.system(size: 10))
                     .fixedSize()
             }
@@ -120,7 +121,10 @@ struct RouteDiagram: View {
         let dynamic = rule.kind == .dynamic
         let remote = rule.kind == .remote
         let narrow = layout.width < 470
-        let isAnimating = !reduceMotion && !capturesStillFrame && (mode == .live || mode == .preview || mode == .example)
+        let isAnimating = switch mode {
+        case .live, .preview, .example, .external: !reduceMotion && !capturesStillFrame
+        case .idle, .blocked: false
+        }
         return ZStack {
             TimelineView(.animation(minimumInterval: 1.0 / 45.0, paused: !isAnimating)) { timeline in
                 Canvas { context, _ in
@@ -255,16 +259,6 @@ struct RouteDiagram: View {
         if !dashed { context.stroke(rail, with: .color(tint.opacity(style.dark ? 0.16 : 0.09)), lineWidth: 7) }
         context.stroke(rail, with: .color(tint.opacity(dashed ? 0.62 : 0.76)),
                        style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: dashed ? [4, 5] : []))
-        let arrowX = remote ? layout.leftEdge + (layout.centerLeft - layout.leftEdge) * 0.26
-            : layout.rightEdge - 18
-        let arrowY = remote ? layout.midY : layout.midY + lane
-        let direction: CGFloat = remote ? -1 : 1
-        let arrow = Path { path in
-            path.move(to: CGPoint(x: arrowX - 4 * direction, y: arrowY - 4))
-            path.addLine(to: CGPoint(x: arrowX, y: arrowY))
-            path.addLine(to: CGPoint(x: arrowX - 4 * direction, y: arrowY + 4))
-        }
-        context.stroke(arrow, with: .color(tint), style: StrokeStyle(lineWidth: 1.25, lineCap: .round, lineJoin: .round))
     }
 
     private func drawPulse(in context: GraphicsContext, layout: RouteLayout, lane: CGFloat, phase: Double, remote: Bool) {
