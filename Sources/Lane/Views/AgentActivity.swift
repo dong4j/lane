@@ -118,11 +118,12 @@ struct AgentActivity: View {
 
     @ViewBuilder
     private var history: some View {
-        if filteredHistory.isEmpty {
+        let leases = filteredHistory
+        if leases.isEmpty {
             empty(query.isEmpty ? L10n.text("No Agent history", "暂无历史记录")
                   : L10n.text("No matching records", "没有匹配的记录"), symbol: "clock.arrow.circlepath")
         }
-        ForEach(filteredHistory) { lease in
+        ForEach(leases) { lease in
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 10) {
                     metadata(lease)

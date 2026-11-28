@@ -97,7 +97,7 @@ struct MainWindow: View {
             }
             .scrollIndicators(.hidden)
             Divider().overlay(style.edge)
-            if !model.agents.ledger.clients.isEmpty || !model.agents.ledger.leases.isEmpty {
+            if !model.agents.ledger.clients.isEmpty || model.agents.hasLeases {
                 agentActivityButton
             }
             HStack {

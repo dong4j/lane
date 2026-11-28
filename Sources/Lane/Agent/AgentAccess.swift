@@ -11,32 +11,51 @@ final class AgentAccess {
         let ruleID: UUID
     }
 
+    private struct RequestKey: Hashable {
+        let clientID: UUID
+        let value: String
+    }
+
     private let manager: TunnelManager
     private let files: AgentFiles?
     @ObservationIgnored private var ipc: AgentIPC?
     @ObservationIgnored private var monitor: Task<Void, Never>?
     @ObservationIgnored private var nextDiscovery = Date.distantPast
     @ObservationIgnored private var isClosing = false
+    @ObservationIgnored private var audit: AgentAuditStore?
+    @ObservationIgnored private var requestIDs: [RequestKey: UUID] = [:]
     private var connections: [AgentPreparedRoute.Key: Connection] = [:]
+    private var leasesByID: [UUID: AgentLease] = [:]
+    private var leaseOrder: [UUID] = []
+    private var openIDs: Set<UUID> = []
     private(set) var ledger = AgentLedger()
     private(set) var storageError = false
     private(set) var serviceError = false
 
     var available: Bool { files != nil && !storageError && !serviceError }
-    var active: [AgentLease] { ledger.leases.reversed().filter { $0.state.isOpen && $0.state != .pendingApproval } }
-    var history: [AgentLease] { ledger.leases.reversed().filter { !$0.state.isOpen } }
+    var hasLeases: Bool { !leaseOrder.isEmpty }
+    private var openLeases: [AgentLease] { openIDs.compactMap { leasesByID[$0] } }
+    var active: [AgentLease] {
+        openLeases.filter { $0.state != .pendingApproval }
+            .sorted { ($0.events.first?.at ?? $0.waitUntil) > ($1.events.first?.at ?? $1.waitUntil) }
+    }
+    var history: [AgentLease] {
+        leaseOrder.reversed().compactMap { id in openIDs.contains(id) ? nil : leasesByID[id] }
+    }
 
     init(manager: TunnelManager, files: AgentFiles?) {
         self.manager = manager
         self.files = files
-        guard let files, FileManager.default.fileExists(atPath: files.ledger.path) else { return }
+        guard let files else { return }
         do {
-            ledger = try JSONDecoder().decode(AgentLedger.self, from: Data(contentsOf: files.ledger))
-            if ledger.leases.contains(where: { $0.state.isOpen }) {
-                var restored = ledger
-                endLeases(in: &restored, reason: .appRestarted) { _ in true }
-                try commit(restored)
-            }
+            let database = try AgentAuditStore(files: files)
+            var restored = try database.load(legacy: files.ledger)
+            audit = database
+            for lease in restored.leases { remember(lease) }
+            restored.leases = []
+            ledger = restored
+            let ended = endedLeases(reason: .appRestarted) { _ in true }
+            if !ended.isEmpty { try commit(leases: ended) }
         } catch {
             storageError = true
         }
@@ -72,11 +91,8 @@ final class AgentAccess {
         monitor = nil
         ipc?.stop()
         ipc = nil
-        if ledger.leases.contains(where: { $0.state.isOpen }) {
-            var next = ledger
-            endLeases(in: &next, reason: .appQuit) { _ in true }
-            try? commit(next)
-        }
+        let ended = endedLeases(reason: .appQuit) { _ in true }
+        if !ended.isEmpty { try? commit(leases: ended) }
         collectUnusedConnections()
     }
 
@@ -92,7 +108,7 @@ final class AgentAccess {
         var next = ledger
         next.clients.append(client)
         do {
-            try commit(next)
+            try commit(settings: next)
         } catch {
             try? FileManager.default.removeItem(at: files.credentialURL(client.id))
             throw error
@@ -125,38 +141,37 @@ final class AgentAccess {
     func setRequestsEnabled(_ enabled: Bool) throws {
         var next = ledger
         next.requestsEnabled = enabled
+        var ended: [AgentLease] = []
         if enabled {
             next.shares = availableShares(from: next.shares)
         } else {
-            endLeases(in: &next, reason: .accessDisabled) { _ in true }
+            ended = endedLeases(reason: .accessDisabled) { _ in true }
         }
-        try commit(next)
+        try commit(settings: next, leases: ended)
         collectUnusedConnections()
     }
 
     func revokeClient(_ id: UUID) throws {
         var next = ledger
         next.clients.removeAll { $0.id == id }
-        endLeases(in: &next, reason: .clientRevoked) { $0.clientID == id }
-        try commit(next)
+        let ended = endedLeases(reason: .clientRevoked) { $0.clientID == id }
+        try commit(settings: next, leases: ended)
         collectUnusedConnections()
         if let file = files?.credentialURL(id) { try? FileManager.default.removeItem(at: file) }
     }
 
     /// Keep eligible local rules in sync and end leases when their saved route changes.
     func libraryChanged() {
-        let invalid = ledger.leases.filter { lease in
-            guard lease.state.isOpen, let key = lease.connectionKey else { return false }
+        let invalid = endedLeases(reason: .routeChanged) { lease in
+            guard let key = lease.connectionKey else { return false }
             return prepared(lease.input.target)?.key != key
         }
         let validShares = ledger.requestsEnabled ? availableShares(from: ledger.shares) :
             ledger.shares.filter { preparedShared($0) != nil }
         guard !invalid.isEmpty || validShares.map(\.id) != ledger.shares.map(\.id) else { return }
-        let ids = Set(invalid.map(\.id))
         var next = ledger
         next.shares = validShares
-        endLeases(in: &next, reason: .routeChanged) { ids.contains($0.id) }
-        try? commit(next)
+        try? commit(settings: next, leases: invalid)
         collectUnusedConnections()
     }
 
@@ -303,29 +318,37 @@ final class AgentAccess {
         return client
     }
 
-    private func lease(_ id: UUID) -> AgentLease? { ledger.leases.first { $0.id == id } }
+    private func lease(_ id: UUID) -> AgentLease? { leasesByID[id] }
 
     private func previousRequest(_ id: UUID, key: String, input: AgentLeaseInput) throws -> AgentLease? {
-        guard let lease = ledger.leases.first(where: { $0.clientID == id && $0.requestKey == key }) else { return nil }
+        guard let leaseID = requestIDs[RequestKey(clientID: id, value: key)], let lease = lease(leaseID) else { return nil }
         guard lease.input == input else { throw AgentToolError.conflict }
         return lease
     }
 
     private func save(_ lease: AgentLease) throws {
-        var next = ledger
-        if let index = next.leases.firstIndex(where: { $0.id == lease.id }) {
-            next.leases[index] = lease
-        } else {
-            next.leases.append(lease)
-        }
-        try commit(next)
+        try commit(leases: [lease])
     }
 
-    private func commit(_ next: AgentLedger) throws {
+    private func remember(_ lease: AgentLease) {
+        if leasesByID[lease.id] == nil {
+            leaseOrder.append(lease.id)
+            requestIDs[RequestKey(clientID: lease.clientID, value: lease.requestKey)] = lease.id
+        }
+        leasesByID[lease.id] = lease
+        if lease.state.isOpen {
+            openIDs.insert(lease.id)
+        } else {
+            openIDs.remove(lease.id)
+        }
+    }
+
+    private func commit(settings: AgentLedger? = nil, leases: [AgentLease] = []) throws {
         guard !storageError else { throw AgentToolError.storage }
         do {
-            try files?.writeLedger(next)
-            ledger = next
+            try audit?.write(settings: settings, leases: leases)
+            if let settings { ledger = settings }
+            for lease in leases { remember(lease) }
         } catch {
             storageError = true
             // If storage fails during cleanup, stop owned forwards anyway. Borrowed sessions remain untouched.
@@ -335,23 +358,24 @@ final class AgentAccess {
         }
     }
 
-    private func endLeases(in next: inout AgentLedger, reason: AgentLease.Reason, matching: (AgentLease) -> Bool) {
+    private func endedLeases(reason: AgentLease.Reason, matching: (AgentLease) -> Bool) -> [AgentLease] {
         let date = Date()
-        for index in next.leases.indices where next.leases[index].state.isOpen && matching(next.leases[index]) {
-            next.leases[index].move(to: .ended, action: .ended, at: date, reason: reason)
+        return openLeases.filter(matching).map {
+            var lease = $0
+            lease.move(to: .ended, action: .ended, at: date, reason: reason)
+            return lease
         }
     }
 
     /// Observe readiness from the same runtime that owns the OpenSSH acknowledgement.
     func reconcile(at now: Date = Date()) throws {
-        var next = ledger
-        var changed = false
-        for index in next.leases.indices where next.leases[index].state.isOpen {
-            let count = next.leases[index].events.count
-            update(&next.leases[index], at: now)
-            if next.leases[index].events.count != count { changed = true }
+        var changed: [AgentLease] = []
+        for var lease in openLeases {
+            let count = lease.events.count
+            update(&lease, at: now)
+            if lease.events.count != count { changed.append(lease) }
         }
-        if changed { try commit(next) }
+        if !changed.isEmpty { try commit(leases: changed) }
         collectUnusedConnections()
     }
 
@@ -388,7 +412,7 @@ final class AgentAccess {
     }
 
     private func collectUnusedConnections() {
-        let inUse = Set(active.compactMap(\.connectionKey))
+        let inUse = Set(openLeases.compactMap(\.connectionKey))
         for key in connections.keys.filter({ !inUse.contains($0) }) {
             if let connection = connections.removeValue(forKey: key) {
                 manager.releaseAgentRoute(connection.runtime)
@@ -399,7 +423,7 @@ final class AgentAccess {
     private func tick() async {
         guard !storageError else { return }
         try? reconcile()
-        let externalIDs = ledger.leases.filter { $0.state == .ready && $0.external != nil }.map(\.id)
+        let externalIDs = openLeases.filter { $0.state == .ready && $0.external != nil }.map(\.id)
         guard !externalIDs.isEmpty, nextDiscovery <= Date() else { return }
         nextDiscovery = Date().addingTimeInterval(5)
         guard let observed = try? await observedExternal() else { return }
@@ -416,15 +440,12 @@ final class AgentAccess {
     private func reconcileExternal(_ ids: [UUID], observed: [AgentExternalEvidence]) throws {
         guard !isClosing else { return }
         let candidates = Set(ids)
-        let gone = ledger.leases.filter { lease in
+        let gone = endedLeases(reason: .externalGone) { lease in
             guard lease.state == .ready, candidates.contains(lease.id), let evidence = lease.external else { return false }
             return !observed.contains(evidence)
         }
         guard !gone.isEmpty else { return }
-        let missing = Set(gone.map(\.id))
-        var next = ledger
-        endLeases(in: &next, reason: .externalGone) { missing.contains($0.id) }
-        try commit(next)
+        try commit(leases: gone)
     }
 
     private func externalEvidence(at address: String) async throws -> AgentExternalEvidence? {

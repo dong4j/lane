@@ -42,9 +42,9 @@ struct AgentAccessTests {
         #expect(rig.access.history.first?.events.map(\.action) == [.requested, .authorized, .connected, .released])
         #expect(rig.manager.runtimes.values.filter(\.isAgentOwned).isEmpty)
 
-        let stored = try String(contentsOf: rig.files.ledger, encoding: .utf8)
-        #expect(!stored.contains(first.token))
-        #expect(!stored.contains(second.token))
+        let stored = try Data(contentsOf: rig.files.database)
+        #expect(stored.range(of: Data(first.token.utf8)) == nil)
+        #expect(stored.range(of: Data(second.token.utf8)) == nil)
     }
 
     @Test
@@ -121,19 +121,46 @@ struct AgentAccessTests {
         let request = AgentToolArguments(kind: .temporary, idempotencyKey: "legacy", purpose: "Test",
                                          profileID: rig.profile.id, listenPort: 4001, targetHost: "localhost", targetPort: 8080)
         let lease = try #require(await rig.call(client, .request, request).lease)
+        var previous = try #require(rig.access.active.first)
+        previous.expiresAt = nil
+        previous.events.removeAll { $0.action != .requested }
+        previous.move(to: .denied, action: .denied, at: Date(), reason: .userDenied)
         var priorLedger = rig.access.ledger
-        let previous = try #require(priorLedger.leases.indices.first)
-        priorLedger.leases[previous].expiresAt = nil
-        priorLedger.leases[previous].events.removeAll { $0.action != .requested }
-        priorLedger.leases[previous].move(to: .denied, action: .denied, at: Date(), reason: .userDenied)
-        try rig.files.writeLedger(priorLedger)
+        priorLedger.leases = [previous]
+        let migration = AgentFiles(directory: rig.files.directory.appending(path: "migration"), socketPath: rig.files.socketPath)
+        try migration.writeLedger(priorLedger)
+        let legacy = try Data(contentsOf: migration.ledger)
 
-        let reopened = AgentAccess(manager: TunnelManager(store: rig.manager.store, demo: true), files: rig.files)
+        let reopened = AgentAccess(manager: TunnelManager(store: rig.manager.store, demo: true), files: migration)
         #expect(reopened.history.first?.id == lease.id)
         #expect(reopened.history.first?.state == .denied)
         #expect(reopened.history.first?.reason == .userDenied)
         #expect(reopened.history.first?.events.map(\.action) == [.requested, .denied])
         #expect(reopened.active.isEmpty)
+        #expect(try Data(contentsOf: migration.ledger) == legacy)
+        let migrated = AgentAccess(manager: TunnelManager(store: rig.manager.store, demo: true), files: migration)
+        #expect(migrated.history.map(\.id) == [lease.id])
+    }
+
+    @Test
+    func storageWriteFailureStopsAgentOwnedRuntimeAndPreservesLastCommit() async throws {
+        let rig = try Rig()
+        defer { rig.clean() }
+        let client = try rig.pair("Codex", canRequest: true)
+        let rule = try rig.share()
+        let request = AgentToolArguments(kind: .shared, idempotencyKey: "write-failure", purpose: "Test", ruleID: rule)
+        let lease = try #require(await rig.call(client, .request, request).lease)
+        let displaced = rig.files.directory.appending(path: "relocated.sqlite3")
+        try FileManager.default.moveItem(at: rig.files.database, to: displaced)
+        let result = await rig.call(client, .release, AgentToolArguments(leaseID: lease.id))
+        #expect(result.error?.code == "audit_unavailable")
+        #expect(rig.access.storageError)
+        #expect(rig.manager.runtimes.values.filter(\.isAgentOwned).isEmpty)
+
+        try FileManager.default.moveItem(at: displaced, to: rig.files.database)
+        let reopened = AgentAccess(manager: TunnelManager(store: rig.manager.store, demo: true), files: rig.files)
+        #expect(reopened.history.first?.id == lease.id)
+        #expect(reopened.history.first?.reason == .appRestarted)
     }
 
     @Test

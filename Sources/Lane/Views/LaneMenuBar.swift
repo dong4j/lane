@@ -115,7 +115,7 @@ struct LaneMenuBar: View {
                     NSApp.activate()
                     openSettings()
                 }
-                if !model.agents.ledger.clients.isEmpty || !model.agents.ledger.leases.isEmpty {
+                if !model.agents.ledger.clients.isEmpty || model.agents.hasLeases {
                     Button(L10n.text("Agent Activity…", "Agent 活动…"), action: showAgentActivity)
                 }
                 Divider()

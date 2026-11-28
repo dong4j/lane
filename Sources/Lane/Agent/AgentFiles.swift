@@ -8,6 +8,7 @@ struct AgentFiles {
     let socketPath: String
 
     var ledger: URL { directory.appending(path: "activity.json") }
+    var database: URL { directory.appending(path: "activity.sqlite3") }
 
     static func live(tunnelFile: URL) -> Self {
         let directory = (ProcessInfo.processInfo.environment["LANE_DATA_FILE"] ?? "").isEmpty
@@ -37,7 +38,8 @@ struct AgentFiles {
         try write(JSONEncoder().encode(snapshot), to: ledger)
     }
 
-    private func write(_ data: Data, to url: URL) throws {
+    /// The protected directory also contains SQLite's temporary transaction files.
+    func prepareDirectory() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         var info = stat()
@@ -45,6 +47,10 @@ struct AgentFiles {
               info.st_mode & S_IFMT == S_IFDIR, info.st_mode & 0o077 == 0 else {
             throw CocoaError(.fileWriteNoPermission)
         }
+    }
+
+    private func write(_ data: Data, to url: URL) throws {
+        try prepareDirectory()
         try data.write(to: url, options: .atomic)
         // The containing directory is already private even before the file is chmod'ed.
         guard chmod(url.path, 0o600) == 0 else { throw CocoaError(.fileWriteNoPermission) }
